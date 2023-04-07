@@ -1,15 +1,24 @@
-# go-hotstuff
+# my-hotstuff
 
-`go-hotstuff` is a simple implementation of hotstuff consensus protocol.
+`my-hotstuff` is a simple implementation of hotstuff consensus protocol. The code was modified from [wjbbig/go-hotstuff](https://github.com/wjbbig/go-hotstuff).
 
 ## Run the example
 
-First, run `scripts/generate_keys.sh` to generate threshold keys, then run `scripts/run_server.sh` to start four hotstuff servers. There are three kinds of networks you can choose to use, they are `basic`, `chained` and `event-driven`, the default network type is `event-driven`. There is a simple client where you can find in `cmd/hotstuffclient`, or you can run `scripts/run_client.sh` to start it.
+First, run `scripts/generate_keys.sh` to generate threshold keys, then run the following commands in each of the four terminals to start four hotstuff servers:
 
-## TODO
+```
+../server/hotstuff -id 1 -type event-driven
 
-1. Fix bugs, especially chained hotstuff.
-2. Complete function of syncing blocks.
+../server/hotstuff -id 2 -type event-driven
+
+../server/hotstuff -id 3 -type event-driven
+
+../server/hotstuff -id 4 -type event-driven
+```
+
+There are three kinds of networks you can choose to use, they are `basic`, `chained` and `event-driven`. You can use the flag `-type` to select which network. There is a simple client where you can find in `cmd/hotstuffclient`, or you can run `scripts/run_client.sh` to start it.
+
+Note that the default keystore path is `/home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys` and the default datastore path is `/home/lmh/Desktop/consensus_code/keys-go-hotstuff/dbfile`, so you need to ensure that these two paths have been created before running the program.
 
 ## Reference
 
