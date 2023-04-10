@@ -2,12 +2,6 @@ package main
 
 import (
 	"context"
-	"github.com/sirupsen/logrus"
-	go_hotstuff "github.com/wjbbig/go-hotstuff"
-	"github.com/wjbbig/go-hotstuff/config"
-	"github.com/wjbbig/go-hotstuff/logging"
-	pb "github.com/wjbbig/go-hotstuff/proto"
-	"google.golang.org/grpc"
 	"math/rand"
 	"net"
 	"os"
@@ -16,6 +10,13 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/sirupsen/logrus"
+	go_hotstuff "github.com/wjbbig/go-hotstuff"
+	"github.com/wjbbig/go-hotstuff/config"
+	"github.com/wjbbig/go-hotstuff/logging"
+	pb "github.com/wjbbig/go-hotstuff/proto"
+	"google.golang.org/grpc"
 )
 
 var logger = logging.GetLogger()
@@ -69,6 +70,7 @@ func (client *HotStuffClient) setResult(cmd command, re reply) {
 }
 
 func (client *HotStuffClient) receiveReply(ctx context.Context) {
+	//如果client.replyChans有值则进行处理
 	for {
 		select {
 		case msg := <-client.replyChan:
@@ -77,6 +79,7 @@ func (client *HotStuffClient) receiveReply(ctx context.Context) {
 			if re, ok := client.getResults(cmd); ok {
 				if re.result == replyMsg.Result {
 					re.count++
+					//获得f+1节点的reply
 					if re.count == client.hotStuffConfig.F+1 {
 						logger.WithFields(logrus.Fields{
 							"cmd":    cmd,
@@ -111,7 +114,7 @@ func main() {
 			panic(err)
 		}
 		defer conn.Close()
-		client := pb.NewHotStuffServiceClient(conn)
+		client := pb.NewHotStuffServiceClient(conn) //grpc的客户端
 		rand.Seed(time.Now().UnixNano())
 		for {
 			time.Sleep(time.Millisecond * 200)
@@ -136,7 +139,7 @@ func main() {
 		<-c
 		// get signal, exit
 		logger.Info("[CLIENT] Client exit...")
-		stuffClient.cancelFunc()
+		stuffClient.cancelFunc() //释放结束信号来结束stuffClient
 		os.Exit(1)
 	}()
 	clientServer.Serve(listen)
