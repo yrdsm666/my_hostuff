@@ -40,7 +40,7 @@ def main():
     }
     
 
-    with open('newHostuff.yaml', mode="w+", encoding='utf-8') as file:
+    with open('hostuff.yaml', mode="w+", encoding='utf-8') as file:
         yaml.dump(data=data, stream=file, allow_unicode=True)
 
 if __name__=='__main__':

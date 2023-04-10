@@ -202,7 +202,7 @@ func (h *HotStuffImpl) SafeExit() {
 func (h *HotStuffImpl) GetLeader() uint32 {
 	id := h.View.ViewNum % uint64(h.Config.N)
 	if id == 0 {
-		id = 4
+		id = uint64(h.Config.N)
 	}
 	return uint32(id)
 }
