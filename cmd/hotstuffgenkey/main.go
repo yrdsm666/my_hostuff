@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
-	go_hotstuff "github.com/yrdsm666/my_hotstuff"
-	"github.com/yrdsm666/my_hotstuff/logging"
+	go_hotstuff "github.com/wjbbig/go-hotstuff"
+	"github.com/wjbbig/go-hotstuff/logging"
 	"os"
 	"path"
 	"strconv"

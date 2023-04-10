@@ -1,0 +1,26 @@
+hotstuff:
+  N: 4
+  batch-size: 10
+  batchtimeout: 1s
+  cluster:
+  - id: 1
+    listen-address: localhost:8080
+    privatekeypath: /home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/r1.key
+  - id: 2
+    listen-address: localhost:8081
+    privatekeypath: /home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/r2.key
+  - id: 3
+    listen-address: localhost:8082
+    privatekeypath: /home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/r3.key
+  - id: 4
+    listen-address: localhost:8083
+    privatekeypath: /home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/r4.key
+  f: 1
+  leader-schedule:
+  - 1
+  - 2
+  - 3
+  - 4
+  pubkeypath: /home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/pub.key
+  timeout: 2s
+  type: basic
