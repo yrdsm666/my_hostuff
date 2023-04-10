@@ -32,7 +32,7 @@ def main():
             "batchtimeout": "1s",
             "timeout": "2s",
             "pubkeypath": "/home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/pub.key",
-            "N": n,
+            "total": n, #直接为"n": n的话，go那边读取会出现问题
             "f": f,
             "leader-schedule": leader_schedule,
             "cluster": cluster
@@ -40,7 +40,7 @@ def main():
     }
     
 
-    with open('hostuff.yaml', mode="w+", encoding='utf-8') as file:
+    with open('hotstuff.yaml', mode="w+", encoding='utf-8') as file:
         yaml.dump(data=data, stream=file, allow_unicode=True)
 
 if __name__=='__main__':

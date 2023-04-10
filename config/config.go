@@ -72,6 +72,6 @@ func (hsc *HotStuffConfig) ReadConfig() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	hsc.N = viper.GetInt("hotstuff.N")
+	hsc.N = viper.GetInt("hotstuff.total")
 	hsc.F = viper.GetInt("hotstuff.f")
 }

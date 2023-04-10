@@ -1,5 +1,4 @@
 hotstuff:
-  N: 7
   batch-size: 10
   batchtimeout: 1s
   cluster:
@@ -35,4 +34,5 @@ hotstuff:
   - 7
   pubkeypath: /home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/pub.key
   timeout: 2s
+  total: 7
   type: basic
