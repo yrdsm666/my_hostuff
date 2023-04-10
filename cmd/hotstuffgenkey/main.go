@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
-	go_hotstuff "github.com/wjbbig/go-hotstuff"
-	"github.com/wjbbig/go-hotstuff/logging"
+	go_hotstuff "github.com/yrdsm666/my_hotstuff"
+	"github.com/yrdsm666/my_hotstuff/logging"
 	"os"
 	"path"
 	"strconv"
@@ -17,8 +17,8 @@ var k, l int
 
 func init() {
 	flag.StringVar(&filePath, "p", "", "where is the key generated")
-	flag.IntVar(&k, "k", 3, "how many keys are needed to create a signature")
-	flag.IntVar(&l, "l", 4, "how many keys are needed to generate")
+	flag.IntVar(&k, "k", 3, "how many keys are needed to create a signature") //默认值为3
+	flag.IntVar(&l, "l", 4, "how many keys are needed to generate") //默认值为4
 }
 
 func main() {

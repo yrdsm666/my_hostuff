@@ -29,7 +29,7 @@ func GenerateThresholdKeys(need, all int) (shares tcrsa.KeyShareList, meta *tcrs
 // TODO find a better way to store keys
 
 func WriteThresholdPrivateKeyToFile(privateKey *tcrsa.KeyShare, filePath string) error {
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644) //如果无文件则创建，有文件则清空
 	if err != nil {
 		return errors.New("cannot open private key file")
 	}
@@ -58,7 +58,7 @@ func WriteThresholdPublicKeyToFile(publicKey *tcrsa.KeyMeta, filePath string) er
 	defer file.Close()
 	marshal, err := json.Marshal(*publicKey)
 	if err != nil {
-		return errors.New("cannot marshal private key")
+		return errors.New("cannot marshal public key")
 	}
 	b := &pem.Block{
 		Type:    publicKeyFileType,
