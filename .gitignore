@@ -7,3 +7,6 @@
 *.iml
 out
 gen
+/cmd/hotstuffgenkey/hotstuffgenkey
+/cmd/hotstuffclient/hotstuffclient
+/server/hotstuff
