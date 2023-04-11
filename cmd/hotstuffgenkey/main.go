@@ -37,6 +37,20 @@ func main() {
 			logger.Fatal(err)
 		}
 	}
+	exist, err = isDirExist(filePath)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	if exist {
+		err = os.RemoveAll(filePath)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		err = os.MkdirAll(filePath, 0777)
+		if err != nil {
+			logger.Fatal(err)
+		}
+	}
 	privateKeys, publicKey, err := go_hotstuff.GenerateThresholdKeys(k, l)
 	if err != nil {
 		logger.Fatal(err)
