@@ -1,0 +1,118 @@
+package sDumbo
+
+import (
+	"bytes"
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"github.com/golang/protobuf/proto"
+	"github.com/niclabs/tcrsa"
+	"github.com/sirupsen/logrus"
+	"github.com/syndtr/goleveldb/leveldb"
+	go_hotstuff "github.com/wjbbig/go-hotstuff"
+	"github.com/wjbbig/go-hotstuff/config"
+	"github.com/wjbbig/go-hotstuff/consensus"
+	"github.com/wjbbig/go-hotstuff/logging"
+	pb "github.com/wjbbig/go-hotstuff/proto"
+	"os"
+	"strconv"
+	"sync"
+	
+)
+
+var logger = logging.GetLogger()
+
+type SpeedMvbaImpl struct {
+	consensus.AsynchronousImpl
+	
+	Proposal      []byte
+	MsgEntrance   chan *pb.Msg // receive msg
+	cancel        context.CancelFunc
+	CoinShare     []*tcrsa.SigShare
+	DocumentHash  []byte
+	Signature     tcrsa.Signature
+
+	SPB           *NewStrongProvableBroadcast
+	cc            *NewCommonCoin
+}
+
+// sid: session id
+func NewSpeedMvbaImpl(id int, Proposal []byte) *SpeedMvbaImpl {
+	logger.Debugf("[COMMIN COIN] Start Provable Broadcast")
+	ctx, cancel := context.WithCancel(context.Background())
+	mvba := &CommonCoinImpll{
+		Proposal:      proposal,
+		cancel:        cancel,
+	}
+
+	msgEntrance := make(chan *pb.Msg)
+	mvba.MsgEntrance = msgEntrance
+	mvba.ID = uint32(id)
+	logger.WithField("replicaID", id).Debug("[COMMIN COIN] Init command cache.")
+
+	// read config
+	mvba.Config = config.HotStuffConfig{}
+	mvba.Config.ReadConfig()
+
+	privateKey, err := go_hotstuff.ReadThresholdPrivateKeyFromFile(mvba.GetSelfInfo().PrivateKey)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	mvba.Config.PrivateKey = privateKey
+
+	go mvba.receiveMsg(ctx)
+	r := 0
+
+	for {
+		sid := 0
+		mvba.SPB = NewStrongProvableBroadcast(id, sid, proposal)
+		sigma_1 := nspb.Signature1
+		sigma_2 := nspb.Signature2
+	}
+
+	return mvba
+}
+
+func (mvba *ProvableBroadcastImpl) receiveMsg(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg := <-mvba.MsgEntrance:
+			go mvba.handleMsg(msg)
+		}
+	}
+}
+
+func (mvba *ProvableBroadcastImpl) handleMsg(msg *pb.Msg) {
+	switch msg.Payload.(type) {
+	case *pb.Msg_COINSHARE:
+		coinShare := msg.GetCoinShare()
+		partSig := &tcrsa.SigShare{}
+		err := json.Unmarshal(coinShare.PartialSig, partSig)
+		if err != nil {
+			logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
+		}
+
+		err := go_hotstuff.VerifyPartSig(partSig, mvba.DocumentHash, mvba.Config.PublicKey)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"error":        err.Error(),
+				"documentHash": hex.EncodeToString(mvba.DocumentHash),
+			}).Warn("[COMMIN COIN] PBEchoVote: signature not verified!")
+			return
+		}
+
+		mvba.CoinShare = append(mvba.CoinShare, partSig)
+
+		if len(mvba.CoinShare) == 2*mvba.Config.F+1 {
+			signature, _ := go_hotstuff.CreateFullSignature(mvba.DocumentHash, mvba.CoinShare, mvba.Config.PublicKey)
+			mvba.Signature = signature
+			mvba.cancel()
+		} 
+		break
+	default:
+		logger.Warn("Receive unsupported msg")
+	}
+}

@@ -39,6 +39,7 @@ func main() {
 	rpcServer := grpc.NewServer()
 
 	hotStuffService := consensus.NewHotStuffService(factory.HotStuffFactory(networkType, id))
+	// register service
 	proto.RegisterHotStuffServiceServer(rpcServer, hotStuffService)
 	// get node port
 	info := hotStuffService.GetImpl().GetSelfInfo()

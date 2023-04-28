@@ -1,0 +1,150 @@
+package sDumbo
+
+import (
+	"bytes"
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"github.com/golang/protobuf/proto"
+	"github.com/niclabs/tcrsa"
+	"github.com/sirupsen/logrus"
+	"github.com/syndtr/goleveldb/leveldb"
+	go_hotstuff "github.com/wjbbig/go-hotstuff"
+	"github.com/wjbbig/go-hotstuff/config"
+	"github.com/wjbbig/go-hotstuff/consensus"
+	"github.com/wjbbig/go-hotstuff/logging"
+	pb "github.com/wjbbig/go-hotstuff/proto"
+	"os"
+	"strconv"
+	"sync"
+	
+)
+
+var logger = logging.GetLogger()
+
+type StrongProvableBroadcastImpl struct {
+	consensus.AsynchronousImpl
+	
+	Sid           uint32
+	Proposal      []byte
+	MsgEntrance   chan *pb.Msg // receive msg
+	cancel        context.CancelFunc
+	EchoVote      []*tcrsa.SigShare
+	ReadyVote     []*tcrsa.SigShare
+	DocumentHash1 []byte
+	DocumentHash2 []byte
+	Signature1    tcrsa.Signature
+	Signature2    tcrsa.Signature
+}
+
+// sid: session id
+func NewStrongProvableBroadcast(id int, sid int, proposal []byte) *ProvableBroadcastImpl {
+	logger.Debugf("[STRONG PROVABLE BROADCAST] Start Provable Broadcast")
+	ctx, cancel := context.WithCancel(context.Background())
+	spb := &StrongProvableBroadcastImpl{
+		proposal:      proposal,
+		cancel:        cancel,
+	}
+
+	msgEntrance := make(chan *pb.Msg)
+	spb.MsgEntrance = msgEntrance
+	spb.ID = uint32(id)
+	spb.Sid = uint32(sid)
+	logger.WithField("replicaID", id).Debug("[STRONG PROVABLE BROADCAST] Init command cache.")
+
+	// read config
+	spb.Config = config.HotStuffConfig{}
+	spb.Config.ReadConfig()
+
+	privateKey, err := go_hotstuff.ReadThresholdPrivateKeyFromFile(spb.GetSelfInfo().PrivateKey)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	spb.Config.PrivateKey = privateKey
+
+	spbValuetMsg := bhs.Msg(pb.MsgType_SPBVALUE, id, sid, proposal, nil)
+
+	// create msg hash
+	marshal, _ := proto.Marshal(spbValuetMsg)
+	spb.DocumentHash1, _ = go_hotstuff.CreateDocumentHash(marshal, spb.Config.PublicKey)
+
+	// broadcast msg
+	spb.Broadcast(spbValuetMsg)
+
+	go spb.receiveMsg(ctx)
+	return spb
+}
+
+func (spb *StrongProvableBroadcastImpl) receiveMsg(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg := <-spb.MsgEntrance:
+			go spb.handleMsg(msg)
+		}
+	}
+}
+
+func (spb *StrongProvableBroadcastImpl) handleMsg(msg *pb.Msg) {
+	switch msg.Payload.(type) {
+	case *pb.Msg_SPBECHO:
+		spbEchoMsg := msg.GetSPBEcho()
+		partSig := &tcrsa.SigShare{}
+		err := json.Unmarshal(spbEchoMsg.PartialSig, partSig)
+		if err != nil {
+			logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
+		}
+
+		err := go_hotstuff.VerifyPartSig(partSig, spb.DocumentHash1, spb.Config.PublicKey)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"error":        err.Error(),
+				"documentHash": hex.EncodeToString(spb.DocumentHash1),
+			}).Warn("[STRONG PROVABLE BROADCAST] PBEchoVote: signature not verified!")
+			return
+		}
+
+		spb.EchoVote = append(spb.EchoVote, partSig)
+
+		if len(spb.EchoVote) == 2*spb.Config.F+1 {
+			signature, _ := go_hotstuff.CreateFullSignature(spb.DocumentHash1,  spb.EchoVote, spb.Config.PublicKey)
+			spb.Signature1 = signature
+			spbLockMsg := bhs.Msg(pb.MsgType_SPBVALUE, id, sid, proposal, signature)
+			// create msg hash
+			marshal, _ := proto.Marshal(spbLockMsg)
+			spb.DocumentHash2, _ = go_hotstuff.CreateDocumentHash(marshal, spb.Config.PublicKey)
+
+			// broadcast msg
+			spb.Broadcast(spbLockMsg)
+		}
+	case *pb.Msg_SPBREADY:
+		spbReadyMsg := msg.GetSPBReady()
+		partSig := &tcrsa.SigShare{}
+		err := json.Unmarshal(spbReadyMsg.PartialSig, partSig)
+		if err != nil {
+			logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
+		}
+
+		err := go_hotstuff.VerifyPartSig(partSig, spb.DocumentHash2, spb.Config.PublicKey)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"error":        err.Error(),
+				"documentHash": hex.EncodeToString(spb.DocumentHash2),
+			}).Warn("[STRONG PROVABLE BROADCAST] PBEchoVote: signature not verified!")
+			return
+		}
+
+		spb.ReadyVote = append(spb.ReadyVote, partSig)
+
+		if len(spb.ReadyVote) == 2*spb.Config.F+1 {
+			signature, _ := go_hotstuff.CreateFullSignature(spb.DocumentHash2,  spb.ReadyVote, spb.Config.PublicKey)
+			spb.Signature2 = signature
+			spb.cancel()
+		}
+		break
+	default:
+		logger.Warn("Receive unsupported msg")
+	}
+}

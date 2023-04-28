@@ -14,25 +14,13 @@ hotstuff:
   - id: 4
     listen-address: localhost:8083
     privatekeypath: /home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/r4.key
-  - id: 5
-    listen-address: localhost:8084
-    privatekeypath: /home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/r5.key
-  - id: 6
-    listen-address: localhost:8085
-    privatekeypath: /home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/r6.key
-  - id: 7
-    listen-address: localhost:8086
-    privatekeypath: /home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/r7.key
-  f: 2
+  f: 1
   leader-schedule:
   - 1
   - 2
   - 3
   - 4
-  - 5
-  - 6
-  - 7
   pubkeypath: /home/lmh/Desktop/consensus_code/keys-go-hotstuff/keys/pub.key
   timeout: 2s
-  total: 7
+  total: 4
   type: basic
