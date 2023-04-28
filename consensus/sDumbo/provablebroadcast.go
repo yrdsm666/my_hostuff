@@ -11,8 +11,8 @@ import (
 	"github.com/sirupsen/logrus"
 	//"github.com/syndtr/goleveldb/leveldb"
 	go_hotstuff "github.com/wjbbig/go-hotstuff"
-	"github.com/wjbbig/go-hotstuff/config"
-	"github.com/wjbbig/go-hotstuff/consensus"
+	//"github.com/wjbbig/go-hotstuff/config"
+	//"github.com/wjbbig/go-hotstuff/consensus"
 	//"github.com/wjbbig/go-hotstuff/logging"
 	pb "github.com/wjbbig/go-hotstuff/proto"
 	//"os"
@@ -23,12 +23,16 @@ import (
 
 //var logger = logging.GetLogger()
 
-type ProvableBroadcast struct {
-	consensus.AsynchronousImpl
+type ProvableBroadcast interface {
+	handleProvableBroadcastMsg(msg *pb.Msg)
+}
 
-	Sid           int
+type ProvableBroadcastImpl struct {
+	//consensus.AsynchronousImpl
+	acs           *CommonSubsetImpl
+	//Sid           int
 
-	Proposal      []byte
+	//Proposal      []byte
 	EchoVote      []*tcrsa.SigShare
 	DocumentHash  []byte
 	DocumentHash2 []byte
@@ -36,28 +40,29 @@ type ProvableBroadcast struct {
 }
 
 // sid: session id
-func NewProvableBroadcast(id int, sid int, proposal []byte, config config.HotStuffConfig) *ProvableBroadcast {
+func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 	logger.Debugf("[PROVABLE BROADCAST] Start Provable Broadcast")
-	prb := &ProvableBroadcast{
-		Sid:           sid,
-		Proposal:      proposal,
+	prb := &ProvableBroadcastImpl{
+		acs:             acs,
+		//Proposal:      proposal,
 	}
 
-	prb.ID = uint32(id)
-	prb.Config = config
+	//prb.acs = acs
 	prb.EchoVote = make([]*tcrsa.SigShare, 0)
 
-	pbValueMsg := prb.Msg(pb.MsgType_PBVALUE, id, sid, proposal, nil)
+	id := int(prb.acs.ID)
+
+	pbValueMsg := prb.acs.Msg(pb.MsgType_PBVALUE, id, prb.acs.Sid, prb.acs.proposalHash, nil)
 
 	// create msg hash
 	//fmt.Println("-------GOOD----------")
-	data := getMsgdata(id, sid, proposal)
+	data := getMsgdata(id, prb.acs.Sid, prb.acs.proposalHash)
 	//fmt.Println(data)
 	//fmt.Printf("variable data is of type %T \n", data)
-	prb.DocumentHash, _ = go_hotstuff.CreateDocumentHash(data, prb.Config.PublicKey)
+	prb.DocumentHash, _ = go_hotstuff.CreateDocumentHash(data, prb.acs.Config.PublicKey)
 
 	// broadcast msg
-	err := prb.Broadcast(pbValueMsg)
+	err := prb.acs.Broadcast(pbValueMsg)
 	if err != nil {
 		logger.WithField("error", err.Error()).Error("Broadcast failed.")
 	}
@@ -65,7 +70,7 @@ func NewProvableBroadcast(id int, sid int, proposal []byte, config config.HotStu
 	return prb
 }
 
-func (prb *ProvableBroadcast) handleProvableBroadcastMsg(msg *pb.Msg) {
+func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 	switch msg.Payload.(type) {
 	case *pb.Msg_PbValue:
 		pbValueMsg := msg.GetPbValue()
@@ -77,7 +82,8 @@ func (prb *ProvableBroadcast) handleProvableBroadcastMsg(msg *pb.Msg) {
 		fmt.Println(senderSid)
 		fmt.Println(senderProposal)
 		fmt.Println("----------------1---------------")
-		fmt.Println(prb.Config)
+		fmt.Printf("variable prb is of type %T \n", prb)
+		fmt.Println(prb.acs.Config)
 		// marshalData := getMsgdata(senderId, senderSid, prb.Proposal)
 		fmt.Println("------------- --2---------------")
 		// fmt.Println(prb.Config.PublicKey)
@@ -111,7 +117,7 @@ func (prb *ProvableBroadcast) handleProvableBroadcastMsg(msg *pb.Msg) {
 		// }
 		break
 	case *pb.Msg_PbEcho:
-		if len(prb.EchoVote) >= 2*prb.Config.F+1{
+		if len(prb.EchoVote) >= 2*prb.acs.Config.F+1{
 			break
 		}
 		pbEchoMsg := msg.GetPbEcho()
@@ -122,7 +128,7 @@ func (prb *ProvableBroadcast) handleProvableBroadcastMsg(msg *pb.Msg) {
 			logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
 		}
 
-		err = go_hotstuff.VerifyPartSig(partSig, prb.DocumentHash, prb.Config.PublicKey)
+		err = go_hotstuff.VerifyPartSig(partSig, prb.DocumentHash, prb.acs.Config.PublicKey)
 		if err != nil {
 			logger.WithFields(logrus.Fields{
 				"error":        err.Error(),
@@ -133,13 +139,13 @@ func (prb *ProvableBroadcast) handleProvableBroadcastMsg(msg *pb.Msg) {
 
 		prb.EchoVote = append(prb.EchoVote, partSig)
 
-		if len(prb.EchoVote) == 2*prb.Config.F+1 {
-			signature, _ := go_hotstuff.CreateFullSignature(prb.DocumentHash,  prb.EchoVote, prb.Config.PublicKey)
+		if len(prb.EchoVote) == 2*prb.acs.Config.F+1 {
+			signature, _ := go_hotstuff.CreateFullSignature(prb.DocumentHash,  prb.EchoVote, prb.acs.Config.PublicKey)
 			prb.Signature = signature
 			marshal, _ := json.Marshal(signature)
-			pbFinalMsg := prb.Msg(pb.MsgType_PBFINAL, int(prb.ID), prb.Sid, prb.Proposal, marshal)
+			pbFinalMsg := prb.acs.Msg(pb.MsgType_PBFINAL, int(prb.acs.ID), prb.acs.Sid, prb.acs.proposalHash, marshal)
 			// broadcast msg
-			err := prb.Broadcast(pbFinalMsg)
+			err := prb.acs.Broadcast(pbFinalMsg)
 			if err != nil {
 				logger.WithField("error", err.Error()).Error("Broadcast failed.")
 			}

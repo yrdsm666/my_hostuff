@@ -29,6 +29,7 @@ type CommonSubsetImpl struct {
 	consensus.AsynchronousImpl
 	
 	Sid              int
+	proposalHash     []byte         
 	cancel           context.CancelFunc
 
 	proBroadcast     ProvableBroadcast
@@ -89,8 +90,9 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 
 	proposal, _ := json.Marshal(txs)
 	proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
-	proBroadcast := NewProvableBroadcast(int(acs.ID), acs.Sid, proposalHash, acs.Config)
-	acs.proBroadcast = *proBroadcast
+	acs.proposalHash = proposalHash
+	acs.proBroadcast = NewProvableBroadcast(acs)
+	//acs.proBroadcast = *proBroadcast
 }
 
 func (acs *CommonSubsetImpl) receiveMsg(ctx context.Context) {
@@ -119,12 +121,12 @@ func (acs *CommonSubsetImpl) handleMsg(msg *pb.Msg) {
 		senderSid := int(pbFinal.Sid)
 		senderProposal := pbFinal.Proposal
 		marshalData := getMsgdata(senderId, senderSid, senderProposal)
-		signature := tcrsa.Signature{}
+		signature := &tcrsa.Signature{}
 		err := json.Unmarshal(pbFinal.Signature, signature)
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 		}
-		flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, marshalData, signature)
+		flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, marshalData, *signature)
 		if ( err != nil || flag==false ) {
 			logger.WithField("error", err.Error()).Error("verfiy signature failed.")
 		}
@@ -136,12 +138,12 @@ func (acs *CommonSubsetImpl) handleMsg(msg *pb.Msg) {
 			id:            senderId,
 			sid:           senderSid,
 			proposalHash:  dataHash,
-			Signature:     signature,
+			Signature:     *signature,
 		}
 		acs.mvbaInputVectors = append(acs.mvbaInputVectors, wVector)
 		if len(acs.mvbaInputVectors) == 2*acs.Config.F+1 {
 			fmt.Println("---------------- [ACS] -----------------")
-			fmt.Println("副本：%d", acs.ID)
+			fmt.Println("副本：", acs.ID)
 			for i := 0; i < 2*acs.Config.F+1; i++{
 				fmt.Println(acs.mvbaInputVectors[i].proposalHash)
 			}
@@ -154,7 +156,7 @@ func (acs *CommonSubsetImpl) handleMsg(msg *pb.Msg) {
 		fmt.Println("---------------- [config_0] -----------------")
 		fmt.Println(acs.Config.PublicKey)
 		fmt.Println("---------------- [config_1] -----------------")
-		fmt.Println(acs.proBroadcast.Config.PublicKey)
+		//fmt.Println(acs.proBroadcast.Config.PublicKey)
 		fmt.Println("---------------- [config_2] -----------------")
 		acs.proBroadcast.handleProvableBroadcastMsg(msg)
 	case *pb.Msg_PbEcho:
