@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc"
 	// "os"
 	// "strconv"
-	"fmt"
+	// "fmt"
 )
 
 // common hotstuff func defined in the paper
@@ -93,9 +93,6 @@ func (a *AsynchronousImpl) GetNetworkInfo() map[uint32]string {
 
 func (a *AsynchronousImpl) Broadcast(msg *pb.Msg) error {
 	infos := a.GetNetworkInfo()
-	fmt.Println("---------------- [Broadcast] -----------------")
-	fmt.Println(infos)
-	fmt.Println("---------------- [Broadcast] -----------------")
 	for _, address := range infos {
 		err := a.Unicast(address, msg)
 		if err != nil {
@@ -116,6 +113,5 @@ func (a *AsynchronousImpl) Unicast(address string, msg *pb.Msg) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("---------------- [Unicast OK] -----------------")
 	return nil
 }

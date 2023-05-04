@@ -49,7 +49,7 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	logger.Debugf("[ACS] Start Common Subset.")
 	ctx, cancel := context.WithCancel(context.Background())
 	acs := &CommonSubsetImpl{
-		Sid:           1,
+		Sid:           0,
 		cancel:        cancel,
 	}
 
@@ -69,6 +69,8 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	acs.Config.PrivateKey = privateKey
 
 	acs.TxnSet = go_hotstuff.NewCmdSet()
+
+	acs.proBroadcast = NewProvableBroadcast(acs)
 
 	go acs.startNewInstance()
 	go acs.receiveMsg(ctx)
@@ -91,7 +93,7 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 	proposal, _ := json.Marshal(txs)
 	proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
 	acs.proposalHash = proposalHash
-	acs.proBroadcast = NewProvableBroadcast(acs)
+	go acs.proBroadcast.startProvableBroadcast()
 	//acs.proBroadcast = *proBroadcast
 }
 
@@ -119,45 +121,43 @@ func (acs *CommonSubsetImpl) handleMsg(msg *pb.Msg) {
 		pbFinal := msg.GetPbFinal()
 		senderId := int(pbFinal.Id)
 		senderSid := int(pbFinal.Sid)
-		senderProposal := pbFinal.Proposal
-		marshalData := getMsgdata(senderId, senderSid, senderProposal)
+		senderProposalHash := pbFinal.Proposal
 		signature := &tcrsa.Signature{}
 		err := json.Unmarshal(pbFinal.Signature, signature)
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 		}
-		flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, marshalData, *signature)
+		marshalData := getMsgdata(senderId, senderSid, senderProposalHash)
+		flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature, marshalData)
 		if ( err != nil || flag==false ) {
 			logger.WithField("error", err.Error()).Error("verfiy signature failed.")
 		}
-		dataHash, err := go_hotstuff.CreateDocumentHash(marshalData, acs.Config.PublicKey)
-		if err != nil {
-			logger.WithField("error", err.Error()).Error("Create Document Hash failed.")
-		}
+		// dataHash, err := go_hotstuff.CreateDocumentHash(marshalData, acs.Config.PublicKey)
+		// if err != nil {
+		// 	logger.WithField("error", err.Error()).Error("Create Document Hash failed.")
+		// }
 		wVector := MvbaInputVector{
 			id:            senderId,
 			sid:           senderSid,
-			proposalHash:  dataHash,
+			proposalHash:  senderProposalHash,
 			Signature:     *signature,
 		}
 		acs.mvbaInputVectors = append(acs.mvbaInputVectors, wVector)
 		if len(acs.mvbaInputVectors) == 2*acs.Config.F+1 {
+			fmt.Println("")
 			fmt.Println("---------------- [ACS] -----------------")
 			fmt.Println("副本：", acs.ID)
 			for i := 0; i < 2*acs.Config.F+1; i++{
-				fmt.Println(acs.mvbaInputVectors[i].proposalHash)
+				fmt.Println("node: ", acs.mvbaInputVectors[i].id)
+				fmt.Println("Sid: ", acs.mvbaInputVectors[i].sid)
+				fmt.Println("proposalHashLen: ",len(acs.mvbaInputVectors[i].proposalHash))
 			}
 			fmt.Println("[ACS] GOOD WORK!.")
 			fmt.Println("---------------- [ACS] -----------------")
-			go acs.startNewInstance()
+			//go acs.startNewInstance()
 		}
 		break
 	case *pb.Msg_PbValue:
-		fmt.Println("---------------- [config_0] -----------------")
-		fmt.Println(acs.Config.PublicKey)
-		fmt.Println("---------------- [config_1] -----------------")
-		//fmt.Println(acs.proBroadcast.Config.PublicKey)
-		fmt.Println("---------------- [config_2] -----------------")
 		acs.proBroadcast.handleProvableBroadcastMsg(msg)
 	case *pb.Msg_PbEcho:
 		acs.proBroadcast.handleProvableBroadcastMsg(msg)

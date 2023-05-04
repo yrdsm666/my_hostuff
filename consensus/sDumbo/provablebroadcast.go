@@ -18,12 +18,13 @@ import (
 	//"os"
 	//"strconv"
 	//"sync"
-	"fmt"
+	// "fmt"
 )
 
 //var logger = logging.GetLogger()
 
 type ProvableBroadcast interface {
+	startProvableBroadcast()
 	handleProvableBroadcastMsg(msg *pb.Msg)
 }
 
@@ -35,19 +36,20 @@ type ProvableBroadcastImpl struct {
 	//Proposal      []byte
 	EchoVote      []*tcrsa.SigShare
 	DocumentHash  []byte
-	DocumentHash2 []byte
+	//DocumentHash2 []byte
 	Signature     tcrsa.Signature
 }
 
-// sid: session id
 func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
-	logger.Debugf("[PROVABLE BROADCAST] Start Provable Broadcast")
 	prb := &ProvableBroadcastImpl{
 		acs:             acs,
 		//Proposal:      proposal,
 	}
+	return prb
+}
 
-	//prb.acs = acs
+func (prb *ProvableBroadcastImpl) startProvableBroadcast() {
+	logger.Debugf("[PROVABLE BROADCAST] Start Provable Broadcast")
 	prb.EchoVote = make([]*tcrsa.SigShare, 0)
 
 	id := int(prb.acs.ID)
@@ -67,7 +69,7 @@ func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 		logger.WithField("error", err.Error()).Error("Broadcast failed.")
 	}
 
-	return prb
+	//return prb
 }
 
 func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
@@ -77,44 +79,43 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		logger.WithField("content", "").Debug("[ACS] Get PbValue msg.")
 		var senderId int = int(pbValueMsg.Id)
 		var senderSid int = int(pbValueMsg.Sid)
-		senderProposal := pbValueMsg.Proposal
-		fmt.Println(senderId)
-		fmt.Println(senderSid)
-		fmt.Println(senderProposal)
-		fmt.Println("----------------1---------------")
-		fmt.Printf("variable prb is of type %T \n", prb)
-		fmt.Println(prb.acs.Config)
-		// marshalData := getMsgdata(senderId, senderSid, prb.Proposal)
-		fmt.Println("------------- --2---------------")
-		// fmt.Println(prb.Config.PublicKey)
+		senderProposalHash := pbValueMsg.Proposal
+		// fmt.Println(senderId)
+		// fmt.Println(senderSid)
+		// fmt.Println(senderProposalHash)
+		// fmt.Println("----------------1---------------")
+		// fmt.Printf("variable prb is of type %T \n", prb)
+		// fmt.Println(prb.acs.Config)
+		marshalData := getMsgdata(senderId, senderSid, senderProposalHash)
+		// fmt.Println("------------- --2---------------")
+		// fmt.Println(prb.acs.Config.PublicKey)
 		// fmt.Println("----------------3---------------")
 		// fmt.Printf("variable marshalData is of type %T \n", marshalData)
 
-		// // defer func() {
-		// // 	if r := recover(); r != nil {
-		// // 		fmt.Println("Some error happened!", r)
-		// // 		//ret = -1
-		// // 	}
-		// // }()
-		// prb.DocumentHash2, _ = go_hotstuff.CreateDocumentHash(marshalData, prb.Config.PublicKey)
+		// defer func() {
+		// 	if r := recover(); r != nil {
+		// 		fmt.Println("Some error happened!", r)
+		// 		//ret = -1
+		// 	}
+		// }()
+		documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, prb.acs.Config.PublicKey)
 		// fmt.Println("----------------4---------------")
-		// fmt.Printf("hash good\n %v\n", prb.DocumentHash2)
+		// fmt.Printf("hash good\n %v\n", documentHash)
 		// logger.WithField("content", "hahahha").Debug("HELLO.")
-		// logger.WithField("content", prb.DocumentHash2).Debug("[ACS] Get PbValue msg.")
-		// // if err != nil {
-		// // 	logger.WithField("error", err.Error()).Error("create Document Hash failed.")
-		// // }
-		// partSig, err := go_hotstuff.TSign(prb.DocumentHash2, prb.Config.PrivateKey, prb.Config.PublicKey)
 		// if err != nil {
-		// 	logger.WithField("error", err.Error()).Error("create the partial signature failed.")
+		// 	logger.WithField("error", err.Error()).Error("create Document Hash failed.")
 		// }
-		// partSigBytes, _ := json.Marshal(partSig)
-		// pbEchoMsg := prb.Msg(pb.MsgType_PBECHO, int(prb.ID), senderSid, nil, partSigBytes)
-		// // // reply msg to sender
-		// err = prb.Unicast(prb.GetNetworkInfo()[uint32(senderId)], pbEchoMsg)
-		// if err != nil {
-		// 	logger.WithField("error", err.Error()).Error("Unicast failed.")
-		// }
+		partSig, err := go_hotstuff.TSign(documentHash, prb.acs.Config.PrivateKey, prb.acs.Config.PublicKey)
+		if err != nil {
+			logger.WithField("error", err.Error()).Error("create the partial signature failed.")
+		}
+		partSigBytes, _ := json.Marshal(partSig)
+		pbEchoMsg := prb.acs.Msg(pb.MsgType_PBECHO, int(prb.acs.ID), senderSid, nil, partSigBytes)
+		// // reply msg to sender
+		err = prb.acs.Unicast(prb.acs.GetNetworkInfo()[uint32(senderId)], pbEchoMsg)
+		if err != nil {
+			logger.WithField("error", err.Error()).Error("Unicast failed.")
+		}
 		break
 	case *pb.Msg_PbEcho:
 		if len(prb.EchoVote) >= 2*prb.acs.Config.F+1{

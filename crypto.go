@@ -51,11 +51,13 @@ func CreateFullSignature(documentHash []byte, partSigs tcrsa.SigShareList, publi
 
 func TVerify(publicKey *tcrsa.KeyMeta, signature tcrsa.Signature, msgBytes []byte) (bool, error) {
 	// get the msg hash
-	documentHash, err := CreateDocumentHash(msgBytes, publicKey)
-	if err != nil {
-		return false, err
-	}
-	err = rsa.VerifyPKCS1v15(publicKey.PublicKey, crypto.SHA256, documentHash, signature)
+	// documentHash, err := CreateDocumentHash(msgBytes, publicKey)
+	// if err != nil {
+	// 	return false, err
+	// }
+	bytes := sha256.Sum256(msgBytes)
+	// ensure len(bytes)=32
+	err := rsa.VerifyPKCS1v15(publicKey.PublicKey, crypto.SHA256, bytes[:], signature)
 	if err != nil {
 		return false, err
 	}
