@@ -114,12 +114,12 @@ func (chs *ChainedHotStuff) handleMsg(msg *pb.Msg) {
 	switch msg.Payload.(type) {
 	case *pb.Msg_Request:
 		request := msg.GetRequest()
-		logger.Debugf("[CHAINED HOTSTUFF] Get request msg, content:%s", request.String())
+		// logger.Debugf("[CHAINED HOTSTUFF] Get request msg, content:%s", request.String())
 		// put the cmd into the cmdset
 		chs.CmdSet.Add(request.Cmd)
 		if chs.GetLeader() != chs.ID {
 			// redirect to the leader
-			chs.Unicast(chs.GetNetworkInfo()[chs.GetLeader()], msg)
+			// chs.Unicast(chs.GetNetworkInfo()[chs.GetLeader()], msg)
 			return
 		}
 		if chs.CurExec.Node != nil {

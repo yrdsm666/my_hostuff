@@ -7,15 +7,13 @@
 client
 
 ```
-go build -o ../cmd/hotstuffclient/hotstuffclient ../cmd/hotstuffclient/
-go build -o ../cmd/acsclient/hotstuffclient ../cmd/acsclient/
+go build -o ../cmd/client/client ../cmd/client/
 ```
 
 server
 
 ```
 go build -o ../server/hotstuff ../server/server.go
-go build -o ../server_2/hotstuff ../server_2/server.go
 ```
 
 
@@ -25,23 +23,9 @@ go build -o ../server_2/hotstuff ../server_2/server.go
 First, run `scripts/generate_keys.sh` to generate threshold keys, then run the following commands in each of the four terminals to start four hotstuff servers:
 
 ```
-../server/hotstuff -id 1 -type event-driven
+../server/hotstuff -type event-driven
 
-../server/hotstuff -id 2 -type event-driven
-
-../server/hotstuff -id 3 -type event-driven
-
-../server/hotstuff -id 4 -type event-driven
-
-
-
-../server_2/hotstuff -id 1 -type acs
-
-../server_2/hotstuff -id 2 -type acs
-
-../server_2/hotstuff -id 3 -type acs
-
-../server_2/hotstuff -id 4 -type acs
+../server/hotstuff -type acs
 ```
 
 There are three kinds of networks you can choose to use, they are `basic`, `chained` and `event-driven`. You can use the flag `-type` to select which network. There is a simple client where you can find in `cmd/hotstuffclient`, or you can run `scripts/run_client.sh` to start it.

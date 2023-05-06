@@ -125,10 +125,11 @@ func main() {
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM,
 		syscall.SIGQUIT, syscall.SIGUSR1, syscall.SIGUSR2)
+		
 
 	// use goroutine send msg
 	go func() {
-		for i := 0; i < 4; i++{
+		for i := 0; i < stuffClient.hotStuffConfig.N; i++{
 			go startSend(i, stuffClient)
 		} 
 	}()

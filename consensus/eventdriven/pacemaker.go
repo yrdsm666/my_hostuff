@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/wjbbig/go-hotstuff/consensus"
 	pb "github.com/wjbbig/go-hotstuff/proto"
+	"strconv"
 )
 
 type Pacemaker interface {
@@ -24,15 +25,15 @@ func NewPacemaker(e *EventDrivenHotStuffImpl) *pacemakerImpl {
 }
 
 func (p *pacemakerImpl) UpdateHighQC(qcHigh *pb.QuorumCert) {
-	logger.Info("[EVENT-DRIVEN HOTSTUFF] UpdateHighQC.")
+	logger.Info("[replica_"+strconv.Itoa(int(p.ehs.ID))+"] [view_"+strconv.Itoa(int(p.ehs.View.ViewNum))+"] UpdateHighQC.")
 	block, _ := p.ehs.expectBlock(qcHigh.BlockHash)
 	if block == nil {
-		logger.Warn("Could not find block of new QC.")
+		logger.Warn("[replica_"+strconv.Itoa(int(p.ehs.ID))+"] [view_"+strconv.Itoa(int(p.ehs.View.ViewNum))+"] Could not find block of new QC.")
 		return
 	}
 	oldQCHighBlock, _ := p.ehs.BlockStorage.BlockOf(p.ehs.qcHigh)
 	if oldQCHighBlock == nil {
-		logger.Error("Block from the old qcHigh missing from storage.")
+		logger.Error("[replica_"+strconv.Itoa(int(p.ehs.ID))+"] [view_"+strconv.Itoa(int(p.ehs.View.ViewNum))+"] Block from the old qcHigh missing from storage.")
 		return
 	}
 
@@ -47,9 +48,11 @@ func (p *pacemakerImpl) OnBeat() {
 }
 
 func (p *pacemakerImpl) OnNextSyncView() {
-	logger.Warn("[EVENT-DRIVEN HOTSTUFF] NewViewTimeout triggered.")
+	logger.Warn("[replica_"+strconv.Itoa(int(p.ehs.ID))+"] [view_"+strconv.Itoa(int(p.ehs.View.ViewNum))+"] NewViewTimeout triggered.")
 	// view change
+	mu.Lock()
 	p.ehs.View.ViewNum++
+	mu.Unlock()
 	p.ehs.View.Primary = p.ehs.GetLeader()
 	// create a dummyNode
 	dummyBlock := p.ehs.CreateLeaf(p.ehs.GetLeaf().Hash, nil, nil)
@@ -61,6 +64,9 @@ func (p *pacemakerImpl) OnNextSyncView() {
 	// send msg
 	if p.ehs.ID != p.ehs.GetLeader() {
 		_ = p.ehs.Unicast(p.ehs.GetNetworkInfo()[p.ehs.GetLeader()], newViewMsg)
+	} else {
+		//send to self
+		p.ehs.MsgEntrance <- newViewMsg
 	}
 	// clean the current proposal
 	p.ehs.CurExec = consensus.NewCurProposal()
@@ -70,7 +76,7 @@ func (p *pacemakerImpl) OnNextSyncView() {
 func (p *pacemakerImpl) OnReceiverNewView(qc *pb.QuorumCert) {
 	p.ehs.lock.Lock()
 	defer p.ehs.lock.Unlock()
-	logger.Info("[EVENT-DRIVEN HOTSTUFF] OnReceiveNewView.")
+	logger.Info("[replica_"+strconv.Itoa(int(p.ehs.ID))+"] [view_"+strconv.Itoa(int(p.ehs.View.ViewNum))+"] OnReceiveNewView.")
 	p.ehs.emitEvent(ReceiveNewView)
 	p.UpdateHighQC(qc)
 }
@@ -122,7 +128,7 @@ func (p *pacemakerImpl) startNewViewTimeout(ctx context.Context) {
 			// send new view msg
 			p.OnNextSyncView()
 		case <-p.ehs.BatchTimeChan.Timeout():
-			logger.Debug("[EVENT-DRIVEN HOTSTUFF] BatchTimeout triggered")
+			logger.Debug("[replica_"+strconv.Itoa(int(p.ehs.ID))+"] [view_"+strconv.Itoa(int(p.ehs.View.ViewNum))+"] BatchTimeout triggered")
 			p.ehs.BatchTimeChan.Init()
 			go p.ehs.OnPropose()
 		case <-ctx.Done():

@@ -292,7 +292,7 @@ func (bhs *BasicHotStuff) handleMsg(msg *pb.Msg) {
 		bhs.CmdSet.Add(request.Cmd)
 		// send request to the leader, if the replica is not the leader
 		if bhs.ID != bhs.GetLeader() {
-			bhs.Unicast(bhs.GetNetworkInfo()[bhs.GetLeader()], msg)
+			// bhs.Unicast(bhs.GetNetworkInfo()[bhs.GetLeader()], msg)
 			return
 		}
 		if bhs.CurExec.Node != nil || bhs.View.ViewChanging {
