@@ -16,7 +16,7 @@ import (
 	//"github.com/wjbbig/go-hotstuff/logging"
 	pb "github.com/wjbbig/go-hotstuff/proto"
 	//"os"
-	//"strconv"
+	"strconv"
 	//"sync"
 	// "fmt"
 )
@@ -49,7 +49,8 @@ func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 }
 
 func (prb *ProvableBroadcastImpl) startProvableBroadcast() {
-	logger.Debugf("[PROVABLE BROADCAST] Start Provable Broadcast")
+	logger.Info("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [PB] Start Provable Broadcast")
+
 	prb.EchoVote = make([]*tcrsa.SigShare, 0)
 
 	id := int(prb.acs.ID)
@@ -57,10 +58,7 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast() {
 	pbValueMsg := prb.acs.Msg(pb.MsgType_PBVALUE, id, prb.acs.Sid, prb.acs.proposalHash, nil)
 
 	// create msg hash
-	//fmt.Println("-------GOOD----------")
 	data := getMsgdata(id, prb.acs.Sid, prb.acs.proposalHash)
-	//fmt.Println(data)
-	//fmt.Printf("variable data is of type %T \n", data)
 	prb.DocumentHash, _ = go_hotstuff.CreateDocumentHash(data, prb.acs.Config.PublicKey)
 
 	// broadcast msg
@@ -68,50 +66,29 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast() {
 	if err != nil {
 		logger.WithField("error", err.Error()).Error("Broadcast failed.")
 	}
-
-	//return prb
 }
 
 func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 	switch msg.Payload.(type) {
 	case *pb.Msg_PbValue:
 		pbValueMsg := msg.GetPbValue()
-		logger.WithField("content", "").Debug("[ACS] Get PbValue msg.")
-		var senderId int = int(pbValueMsg.Id)
-		var senderSid int = int(pbValueMsg.Sid)
-		senderProposalHash := pbValueMsg.Proposal
-		// fmt.Println(senderId)
-		// fmt.Println(senderSid)
-		// fmt.Println(senderProposalHash)
-		// fmt.Println("----------------1---------------")
-		// fmt.Printf("variable prb is of type %T \n", prb)
-		// fmt.Println(prb.acs.Config)
-		marshalData := getMsgdata(senderId, senderSid, senderProposalHash)
-		// fmt.Println("------------- --2---------------")
-		// fmt.Println(prb.acs.Config.PublicKey)
-		// fmt.Println("----------------3---------------")
-		// fmt.Printf("variable marshalData is of type %T \n", marshalData)
+		senderId := int(pbValueMsg.Id)
+		senderSid := int(pbValueMsg.Sid)
+		logger.WithFields(logrus.Fields{
+			"senderId":  senderId,
+			"senderSid":  senderSid,
+		}).Info("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [PB] Get PbValue msg")
 
-		// defer func() {
-		// 	if r := recover(); r != nil {
-		// 		fmt.Println("Some error happened!", r)
-		// 		//ret = -1
-		// 	}
-		// }()
+		senderProposalHash := pbValueMsg.Proposal
+		marshalData := getMsgdata(senderId, senderSid, senderProposalHash)
 		documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, prb.acs.Config.PublicKey)
-		// fmt.Println("----------------4---------------")
-		// fmt.Printf("hash good\n %v\n", documentHash)
-		// logger.WithField("content", "hahahha").Debug("HELLO.")
-		// if err != nil {
-		// 	logger.WithField("error", err.Error()).Error("create Document Hash failed.")
-		// }
 		partSig, err := go_hotstuff.TSign(documentHash, prb.acs.Config.PrivateKey, prb.acs.Config.PublicKey)
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("create the partial signature failed.")
 		}
 		partSigBytes, _ := json.Marshal(partSig)
 		pbEchoMsg := prb.acs.Msg(pb.MsgType_PBECHO, int(prb.acs.ID), senderSid, nil, partSigBytes)
-		// // reply msg to sender
+		// reply msg to sender
 		err = prb.acs.Unicast(prb.acs.GetNetworkInfo()[uint32(senderId)], pbEchoMsg)
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unicast failed.")
@@ -122,7 +99,20 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			break
 		}
 		pbEchoMsg := msg.GetPbEcho()
-		logger.WithField("content", "").Debug("[ACS] Get pbEcho msg.")
+		// Ignore messages from old sid
+		senderSid := int(pbEchoMsg.Sid)
+		if senderSid != prb.acs.Sid{
+			logger.WithFields(logrus.Fields{
+				"senderId":  int(pbEchoMsg.Id),
+				"senderSid":  senderSid,
+			}).Warn("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [PB] Get mismatch PbEcho msg")
+			break
+		}
+		logger.WithFields(logrus.Fields{
+			"senderId":  int(pbEchoMsg.Id),
+			"senderSid":  senderSid,
+		}).Info("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [PB] Get pbEcho msg")
+
 		partSig := &tcrsa.SigShare{}
 		err := json.Unmarshal(pbEchoMsg.SignShare, partSig)
 		if err != nil {
@@ -134,23 +124,39 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			logger.WithFields(logrus.Fields{
 				"error":        err.Error(),
 				"documentHash": hex.EncodeToString(prb.DocumentHash),
-			}).Warn("[PROVABLE BROADCAST] pbEchoVote: signature not verified!")
+			}).Warn("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [PB] pbEchoVote: signature not verified!")
 			return
 		}
 
 		prb.EchoVote = append(prb.EchoVote, partSig)
 
 		if len(prb.EchoVote) == 2*prb.acs.Config.F+1 {
-			signature, _ := go_hotstuff.CreateFullSignature(prb.DocumentHash,  prb.EchoVote, prb.acs.Config.PublicKey)
+			signature, err := go_hotstuff.CreateFullSignature(prb.DocumentHash,  prb.EchoVote, prb.acs.Config.PublicKey)
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"error":        err.Error(),
+					"documentHash": hex.EncodeToString(prb.DocumentHash),
+				}).Error("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [PB] pbEchoVote: create signature failed!")
+			}
 			prb.Signature = signature
+			logger.WithFields(logrus.Fields{
+				"signature":        len(signature),
+				"documentHash": len(prb.DocumentHash),
+				"echoVote": len(prb.EchoVote),
+			}).Warn("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [PB] pbEchoVote: create signature")
 			marshal, _ := json.Marshal(signature)
 			pbFinalMsg := prb.acs.Msg(pb.MsgType_PBFINAL, int(prb.acs.ID), prb.acs.Sid, prb.acs.proposalHash, marshal)
 			// broadcast msg
-			err := prb.acs.Broadcast(pbFinalMsg)
+			err = prb.acs.Broadcast(pbFinalMsg)
 			if err != nil {
 				logger.WithField("error", err.Error()).Error("Broadcast failed.")
 			}
-		
+			// start a new instance if the conditions are met
+			prb.acs.taskEndFlag = true
+			if prb.acs.msgEndFlag == true {
+				prb.acs.restart <- true
+			}
+			
 		}
 		break
 	default:
