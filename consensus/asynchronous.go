@@ -27,7 +27,6 @@ type AsynchronousImpl struct {
 	ID            uint32
 	MsgEntrance   chan *pb.Msg // receive msg
 	Config        config.HotStuffConfig
-	CurExec       *CurProposal
 	TxnSet        go_hotstuff.CmdSet
 }
 

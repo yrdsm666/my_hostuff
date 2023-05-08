@@ -232,13 +232,15 @@ func (h *HotStuffImpl) GetNetworkInfo() map[uint32]string {
 func (h *HotStuffImpl) Broadcast(msg *pb.Msg) error {
 	infos := h.GetNetworkInfo()
 
+	var broadcastErr error
+	broadcastErr = nil
 	for _, address := range infos {
 		err := h.Unicast(address, msg)
 		if err != nil {
-			return err
+			broadcastErr = err
 		}
 	}
-	return nil
+	return broadcastErr
 }
 
 func (h *HotStuffImpl) Unicast(address string, msg *pb.Msg) error {
