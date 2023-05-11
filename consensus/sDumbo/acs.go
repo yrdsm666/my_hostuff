@@ -19,7 +19,7 @@ import (
 	"strconv"
 	//"sync"
 	"time"
-	"fmt"
+	// "fmt"
 	
 )
 
@@ -31,13 +31,14 @@ type CommonSubsetImpl struct {
 	Sid                int
 	proposalHash       []byte         
 	cancel             context.CancelFunc
-	restart            chan bool
-	taskEndFlag        bool
-	msgEndFlag         bool
+	taskSignal         chan string
+	// restart            chan bool
+	// taskEndFlag        bool
+	// msgEndFlag         bool
 
 	proBroadcast       ProvableBroadcast
 	// mvbaInputVectors map[int][]MvbaInputVector
-	mvbaInputVectors   []MvbaInputVector
+	vectors            []MvbaInputVector
 	futureVectorsCache []MvbaInputVector
 }
 
@@ -58,9 +59,9 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	}
 
 	msgEntrance := make(chan *pb.Msg)
-	restart := make(chan bool)
+	taskSignal := make(chan string)
 	acs.MsgEntrance = msgEntrance
-	acs.restart =restart
+	acs.taskSignal = taskSignal
 	acs.ID = uint32(id)
 	logger.WithField("replicaID", id).Debug("[ACS] Init command cache.")
 
@@ -80,21 +81,21 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 
 	acs.futureVectorsCache = make([]MvbaInputVector, 0)
 
-	go acs.start(ctx)
+	// acs.controller("start")
+	go acs.receiveTaskSignal(ctx)
 	go acs.receiveMsg(ctx)
 
-	acs.restart <- true
 	return acs
 }
 
 func (acs *CommonSubsetImpl) startNewInstance() {
 	acs.Sid = acs.Sid + 1
-	acs.mvbaInputVectors = make([]MvbaInputVector, 0)
+	acs.vectors = make([]MvbaInputVector, 0)
 
 	vectors := acs.futureVectorsCache[:]
 	for i, v := range vectors {
 		if v.sid == acs.Sid{
-			acs.mvbaInputVectors = append(acs.mvbaInputVectors, v)
+			acs.vectors = append(acs.vectors, v)
 			acs.futureVectorsCache = append(acs.futureVectorsCache[:i], acs.futureVectorsCache[i+1:]...)
 		}
 	}
@@ -117,16 +118,39 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 	//acs.proBroadcast = *proBroadcast
 }
 
-func (acs *CommonSubsetImpl) start(ctx context.Context) {
+func (acs *CommonSubsetImpl) receiveTaskSignal(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <- acs.restart:
-			acs.taskEndFlag = false
-			acs.msgEndFlag = false
-			go acs.startNewInstance()
+		case task := <-acs.taskSignal:
+			go acs.controller(task)
 		}
+	}
+}
+
+func (acs *CommonSubsetImpl) controller(task string) {
+	switch task {
+	case "init":
+		go acs.startNewInstance()
+	case "end":
+		go acs.startNewInstance()
+	case "restart":
+		//完全结束和重新开始不一样
+		go acs.startNewInstance()
+	case "ProvableBroadcastFinal":
+		go acs.startNewInstance()
+	case "SPBFinal":
+		//去mvba的控制器
+		go acs.startNewInstance()
+	case "coinFinal":
+		//去mvba的控制器
+		go acs.startNewInstance()
+	case "voteFinal":
+		//去mvba的控制器
+		go acs.startNewInstance()
+	default:
+		logger.Warn("Receive unsupported task signal")
 	}
 }
 
@@ -151,66 +175,7 @@ func (acs *CommonSubsetImpl) handleMsg(msg *pb.Msg) {
 		// send the request to the leader, if the replica is not the leader
 		break
 	case *pb.Msg_PbFinal:
-		pbFinal := msg.GetPbFinal()
-		senderId := int(pbFinal.Id)
-		senderSid := int(pbFinal.Sid)
-		senderProposalHash := pbFinal.Proposal
-		// Ignore messages from old sid
-		if senderSid < acs.Sid{
-			logger.WithFields(logrus.Fields{
-				"senderId":  senderId,
-				"senderSid":  senderSid,
-			}).Warn("[replica_"+strconv.Itoa(int(acs.ID))+"] [sid_"+strconv.Itoa(acs.Sid)+"] [PB] Get mismatch Pbfinal msg")
-			break
-		}
-		logger.WithFields(logrus.Fields{
-			"senderId":  senderId,
-			"senderSid":  senderSid,
-		}).Info("[replica_"+strconv.Itoa(int(acs.ID))+"] [sid_"+strconv.Itoa(int(acs.Sid))+"] [PB] Get PbFinal msg")
-		signature := &tcrsa.Signature{}
-		err := json.Unmarshal(pbFinal.Signature, signature)
-		if err != nil {
-			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
-		}
-		marshalData := getMsgdata(senderId, senderSid, senderProposalHash)
-		flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature, marshalData)
-		if ( err != nil || flag==false ) {
-			logger.WithField("error", err.Error()).Error("[replica_"+strconv.Itoa(int(acs.ID))+"] [sid_"+strconv.Itoa(int(acs.Sid))+"] verfiy signature failed.")
-		}
-		wVector := MvbaInputVector{
-			id:            senderId,
-			sid:           senderSid,
-			proposalHash:  senderProposalHash,
-			Signature:     *signature,
-		}
-		if senderSid > acs.Sid {
-			acs.futureVectorsCache = append(acs.mvbaInputVectors, wVector)
-		} else {
-			acs.mvbaInputVectors = append(acs.mvbaInputVectors, wVector)
-		}
-		if len(acs.mvbaInputVectors) == 2*acs.Config.F+1 {
-			fmt.Println("")
-			fmt.Println("---------------- [ACS] -----------------")
-			fmt.Println("副本：", acs.ID)
-			for i := 0; i < 2*acs.Config.F+1; i++{
-				fmt.Println("node: ", acs.mvbaInputVectors[i].id)
-				fmt.Println("Sid: ", acs.mvbaInputVectors[i].sid)
-				fmt.Println("proposalHashLen: ",len(acs.mvbaInputVectors[i].proposalHash))
-			}
-			fmt.Println("[ACS] GOOD WORK!.")
-			fmt.Println("---------------- [ACS] -----------------")
-			// 需要保证旧实例结束再启动新实例
-			// 不能同时执行新旧实例，代码不允许
-			// 达到新实例的启动条件时，仍然要执行旧实例，不然其他节点可能无法在上一个实例中结束
-			// 也就是说，当节点广播完上一个实例的的pbfinal消息后，才可启动新实例
-			//go acs.startNewInstance()
-			// start a new instance if the conditions are met
-			acs.msgEndFlag = true
-			if acs.taskEndFlag == true {
-				acs.restart <- true
-			}
-		}
-		break
+		acs.proBroadcast.handleProvableBroadcastMsg(msg)
 	case *pb.Msg_PbValue:
 		acs.proBroadcast.handleProvableBroadcastMsg(msg)
 	case *pb.Msg_PbEcho:

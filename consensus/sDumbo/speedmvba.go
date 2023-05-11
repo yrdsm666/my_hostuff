@@ -21,23 +21,54 @@ import (
 	
 )
 
-var logger = logging.GetLogger()
+// var logger = logging.GetLogger()
+
+type SpeedMvba interface {
+	startSpeedMvba()
+	handleSpeedMvbaMsg(msg *pb.Msg)
+}
 
 type SpeedMvbaImpl struct {
-	consensus.AsynchronousImpl
+	acs           *CommonSubsetImpl
 	
-	Proposal      []byte
-	MsgEntrance   chan *pb.Msg // receive msg
-	cancel        context.CancelFunc
+	// Proposal      []byte
+	
 	CoinShare     []*tcrsa.SigShare
 	DocumentHash  []byte
 	Signature     tcrsa.Signature
 
-	SPB           *NewStrongProvableBroadcast
-	cc            *NewCommonCoin
+	// SPB           *NewStrongProvableBroadcast
+	// cc            *NewCommonCoin
 }
 
-// sid: session id
+func NewSpeedMvba(acs *CommonSubsetImpl) *SpeedMvbaImpl {
+	vba := &SpeedMvbaImpl{
+		acs:             acs,
+		//Proposal:      proposal,
+	}
+	return vba
+}
+
+func (vba *SpeedMvbaImpl) startSpeedMvba() {
+	logger.Info("[replica_"+strconv.Itoa(int(vba.acs.ID))+"] [sid_"+strconv.Itoa(vba.acs.Sid)+"] [MVBA] Start Speed Mvba")
+
+	// prb.EchoVote = make([]*tcrsa.SigShare, 0)
+
+	// id := int(prb.acs.ID)
+
+	// pbValueMsg := prb.acs.Msg(pb.MsgType_PBVALUE, id, prb.acs.Sid, prb.acs.proposalHash, nil)
+
+	// // create msg hash
+	// data := getMsgdata(id, prb.acs.Sid, prb.acs.proposalHash)
+	// prb.DocumentHash, _ = go_hotstuff.CreateDocumentHash(data, prb.acs.Config.PublicKey)
+
+	// // broadcast msg
+	// err := prb.acs.Broadcast(pbValueMsg)
+	// if err != nil {
+	// 	logger.WithField("error", err.Error()).Error("Broadcast failed.")
+	// }
+}
+
 func NewSpeedMvbaImpl(id int, Proposal []byte) *SpeedMvbaImpl {
 	logger.Debugf("[COMMIN COIN] Start Provable Broadcast")
 	ctx, cancel := context.WithCancel(context.Background())

@@ -18,7 +18,7 @@ import (
 	//"os"
 	"strconv"
 	//"sync"
-	// "fmt"
+	"fmt"
 )
 
 //var logger = logging.GetLogger()
@@ -66,6 +66,9 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast() {
 	if err != nil {
 		logger.WithField("error", err.Error()).Error("Broadcast failed.")
 	}
+
+	// vote self
+	// prb.acs.MsgEntrance <- pbValueMsg
 }
 
 func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
@@ -93,6 +96,8 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unicast failed.")
 		}
+		// echo self
+
 		break
 	case *pb.Msg_PbEcho:
 		if len(prb.EchoVote) >= 2*prb.acs.Config.F+1{
@@ -151,14 +156,71 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			if err != nil {
 				logger.WithField("error", err.Error()).Error("Broadcast failed.")
 			}
-			// start a new instance if the conditions are met
-			prb.acs.taskEndFlag = true
-			if prb.acs.msgEndFlag == true {
-				prb.acs.restart <- true
-			}
+			// send to self
 			
 		}
 		break
+	case *pb.Msg_PbFinal:
+		pbFinal := msg.GetPbFinal()
+		senderId := int(pbFinal.Id)
+		senderSid := int(pbFinal.Sid)
+		senderProposalHash := pbFinal.Proposal
+		// Ignore messages from old sid
+		if senderSid < prb.acs.Sid{
+			logger.WithFields(logrus.Fields{
+				"senderId":  senderId,
+				"senderSid":  senderSid,
+			}).Warn("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [PB] Get mismatch Pbfinal msg")
+			break
+		}
+		logger.WithFields(logrus.Fields{
+			"senderId":  senderId,
+			"senderSid":  senderSid,
+		}).Info("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(int(prb.acs.Sid))+"] [PB] Get PbFinal msg")
+		signature := &tcrsa.Signature{}
+		err := json.Unmarshal(pbFinal.Signature, signature)
+		if err != nil {
+			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
+		}
+		marshalData := getMsgdata(senderId, senderSid, senderProposalHash)
+		flag, err := go_hotstuff.TVerify(prb.acs.Config.PublicKey, *signature, marshalData)
+		if ( err != nil || flag==false ) {
+			logger.WithField("error", err.Error()).Error("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(int(prb.acs.Sid))+"] verfiy signature failed.")
+		}
+		wVector := MvbaInputVector{
+			id:            senderId,
+			sid:           senderSid,
+			proposalHash:  senderProposalHash,
+			Signature:     *signature,
+		}
+		if senderSid > prb.acs.Sid {
+			prb.acs.futureVectorsCache = append(prb.acs.vectors, wVector)
+		} else {
+			prb.acs.vectors = append(prb.acs.vectors, wVector)
+		} 
+		if len(prb.acs.vectors) == 2*prb.acs.Config.F+1 {
+			fmt.Println("")
+			fmt.Println("---------------- [ACS] -----------------")
+			fmt.Println("副本：", prb.acs.ID)
+			for i := 0; i < 2*prb.acs.Config.F+1; i++{
+				fmt.Println("node: ", prb.acs.vectors[i].id)
+				fmt.Println("Sid: ", prb.acs.vectors[i].sid)
+				fmt.Println("proposalHashLen: ",len(prb.acs.vectors[i].proposalHash))
+			}
+			fmt.Println("[ACS] GOOD WORK!.")
+			fmt.Println("---------------- [ACS] -----------------")
+			// 需要保证旧实例结束再启动新实例
+			// 不能同时执行新旧实例，代码不允许
+			// 达到新实例的启动条件时，仍然要执行旧实例，不然其他节点可能无法在上一个实例中结束
+			// 也就是说，当节点广播完上一个实例的的pbfinal消息后，才可启动新实例
+			//go acs.startNewInstance()
+			// start a new instance if the conditions are met
+			// acs.msgEndFlag = true
+			// if acs.taskEndFlag == true {
+			// 	acs.restart <- true
+			// }
+			prb.acs.taskSignal <- "ProvableBroadcastFinal"
+		}
 	default:
 		logger.Warn("[PROVABLE BROADCAST] Receive unsupported msg")
 	}
