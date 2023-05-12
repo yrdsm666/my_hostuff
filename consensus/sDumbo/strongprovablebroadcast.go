@@ -25,14 +25,21 @@ import (
 
 type StrongProvableBroadcast interface {
 	startStrongProvableBroadcast()
-	handleStrongProvableBroadcastMsg(msg *pb.Msg)
+	controller(task string)
+	getSignature1() tcrsa.Signature
+	getSignature2() tcrsa.Signature
+	// handleStrongProvableBroadcastMsg(msg *pb.Msg)
 }
 
 type StrongProvableBroadcastImpl struct {
 	acs           *CommonSubsetImpl
 
-	EchoVote      []*tcrsa.SigShare
-	ReadyVote     []*tcrsa.SigShare
+	proposal      []byte
+	// complete      bool
+	proBroadcast1 ProvableBroadcast
+	proBroadcast2 ProvableBroadcast
+	// EchoVote      []*tcrsa.SigShare
+	// ReadyVote     []*tcrsa.SigShare
 	DocumentHash1 []byte
 	DocumentHash2 []byte
 	Signature1    tcrsa.Signature
@@ -42,98 +49,52 @@ type StrongProvableBroadcastImpl struct {
 func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastImpl {
 	spb := &StrongProvableBroadcastImpl{
 		acs:             acs,
+		// complete:        false,
 	}
 	return spb
 }
 
 // sid: session id
-func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast() *ProvableBroadcastImpl {
+func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []byte) *StrongProvableBroadcastImpl {
 	logger.Info("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [SPB] Start Strong Provable Broadcast")
 
-	spb.EchoVote = make([]*tcrsa.SigShare, 0)
+	spb.acs.taskPhase = "SPB"
+	spb.proposal = proposal
+	// spb.Signature1 = tcrsa.SigShare{}
+	// spb.Signature2 = tcrsa.SigShare{}
+	spb.proBroadcast1 = NewProvableBroadcast(spb.acs)
+	spb.proBroadcast2 = NewProvableBroadcast(spb.acs)
 
-	spbValuetMsg := spb.acs.Msg(pb.MsgType_SPBVALUE, id, sid, proposal, nil)
-
-	// create msg hash
-	marshal, _ := proto.Marshal(spbValuetMsg)
-	spb.DocumentHash1, _ = go_hotstuff.CreateDocumentHash(marshal, spb.Config.PublicKey)
-
-	// broadcast msg
-	spb.Broadcast(spbValuetMsg)
-
-	go spb.receiveMsg(ctx)
-	return spb
+	go spb.proBroadcast1.startProvableBroadcast(proposal)
 }
 
-func (spb *StrongProvableBroadcastImpl) receiveMsg(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case msg := <-spb.MsgEntrance:
-			go spb.handleMsg(msg)
-		}
-	}
-}
-
-func (spb *StrongProvableBroadcastImpl) handleMsg(msg *pb.Msg) {
-	switch msg.Payload.(type) {
-	case *pb.Msg_SPBECHO:
-		spbEchoMsg := msg.GetSPBEcho()
-		partSig := &tcrsa.SigShare{}
-		err := json.Unmarshal(spbEchoMsg.PartialSig, partSig)
-		if err != nil {
-			logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
-		}
-
-		err := go_hotstuff.VerifyPartSig(partSig, spb.DocumentHash1, spb.Config.PublicKey)
-		if err != nil {
-			logger.WithFields(logrus.Fields{
-				"error":        err.Error(),
-				"documentHash": hex.EncodeToString(spb.DocumentHash1),
-			}).Warn("[STRONG PROVABLE BROADCAST] PBEchoVote: signature not verified!")
-			return
-		}
-
-		spb.EchoVote = append(spb.EchoVote, partSig)
-
-		if len(spb.EchoVote) == 2*spb.Config.F+1 {
-			signature, _ := go_hotstuff.CreateFullSignature(spb.DocumentHash1,  spb.EchoVote, spb.Config.PublicKey)
+func (spb *StrongProvableBroadcastImpl) controller(task string) {
+	if task=="getPbValue"{
+		if spb.proBroadcast2.complete == false{
+			signature := spb.proBroadcast1.getSignature()
 			spb.Signature1 = signature
-			spbLockMsg := bhs.Msg(pb.MsgType_SPBVALUE, id, sid, proposal, signature)
-			// create msg hash
-			marshal, _ := proto.Marshal(spbLockMsg)
-			spb.DocumentHash2, _ = go_hotstuff.CreateDocumentHash(marshal, spb.Config.PublicKey)
-
-			// broadcast msg
-			spb.Broadcast(spbLockMsg)
-		}
-	case *pb.Msg_SPBREADY:
-		spbReadyMsg := msg.GetSPBReady()
-		partSig := &tcrsa.SigShare{}
-		err := json.Unmarshal(spbReadyMsg.PartialSig, partSig)
-		if err != nil {
-			logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
-		}
-
-		err := go_hotstuff.VerifyPartSig(partSig, spb.DocumentHash2, spb.Config.PublicKey)
-		if err != nil {
-			logger.WithFields(logrus.Fields{
-				"error":        err.Error(),
-				"documentHash": hex.EncodeToString(spb.DocumentHash2),
-			}).Warn("[STRONG PROVABLE BROADCAST] PBEchoVote: signature not verified!")
-			return
-		}
-
-		spb.ReadyVote = append(spb.ReadyVote, partSig)
-
-		if len(spb.ReadyVote) == 2*spb.Config.F+1 {
-			signature, _ := go_hotstuff.CreateFullSignature(spb.DocumentHash2,  spb.ReadyVote, spb.Config.PublicKey)
+			proposal, _ := json.Marshal(signature1)
+			go acs.proBroadcast1.startProvableBroadcast(proposal)
+		}else{
+			signature := spb.proBroadcast2.getSignature()
 			spb.Signature2 = signature
-			spb.cancel()
+			go spb.acs.broadcastPbFinal(signature2)
 		}
-		break
-	default:
-		logger.Warn("Receive unsupported msg")
 	}
+}
+
+func (spb *StrongProvableBroadcastImpl) getSignature1() tcrsa.Signature {
+	if spb.proBroadcast1.complete == false{
+		logger.Error("[replica_"+strconv.Itoa(int(spb.acs.ID))+"] [sid_"+strconv.Itoa(spb.acs.Sid)+"] [SPB] Provable Broadcast 1 is not complet")
+		return nil
+	}
+	return spb.Signature1
+}
+
+func (spb *StrongProvableBroadcastImpl) getSignature2() tcrsa.Signature {
+	if spb.proBroadcast2.complete == false{
+		logger.Error("[replica_"+strconv.Itoa(int(spb.acs.ID))+"] [sid_"+strconv.Itoa(spb.acs.Sid)+"] [SPB] Provable Broadcast 2 is not complet")
+		return nil
+	}
+	return spb.Signature2
 }
