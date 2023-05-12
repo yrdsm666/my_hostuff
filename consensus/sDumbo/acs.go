@@ -32,6 +32,7 @@ type CommonSubsetImpl struct {
 	proposalHash       []byte         
 	cancel             context.CancelFunc
 	taskSignal         chan string
+	// taskPhase          string
 	// restart            chan bool
 	// taskEndFlag        bool
 	// msgEndFlag         bool
@@ -115,7 +116,6 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 	proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
 	acs.proposalHash = proposalHash
 	go acs.proBroadcast.startProvableBroadcast()
-	//acs.proBroadcast = *proBroadcast
 }
 
 func (acs *CommonSubsetImpl) receiveTaskSignal(ctx context.Context) {
@@ -138,7 +138,9 @@ func (acs *CommonSubsetImpl) controller(task string) {
 	case "restart":
 		//完全结束和重新开始不一样
 		go acs.startNewInstance()
-	case "ProvableBroadcastFinal":
+	case "getPbValue":
+		go acs.startNewInstance()
+	case "pbFinal":
 		go acs.startNewInstance()
 	case "SPBFinal":
 		//去mvba的控制器

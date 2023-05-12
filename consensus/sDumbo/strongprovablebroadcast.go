@@ -21,15 +21,16 @@ import (
 	
 )
 
-var logger = logging.GetLogger()
+// var logger = logging.GetLogger()
+
+type StrongProvableBroadcast interface {
+	startStrongProvableBroadcast()
+	handleStrongProvableBroadcastMsg(msg *pb.Msg)
+}
 
 type StrongProvableBroadcastImpl struct {
-	consensus.AsynchronousImpl
-	
-	Sid           uint32
-	Proposal      []byte
-	MsgEntrance   chan *pb.Msg // receive msg
-	cancel        context.CancelFunc
+	acs           *CommonSubsetImpl
+
 	EchoVote      []*tcrsa.SigShare
 	ReadyVote     []*tcrsa.SigShare
 	DocumentHash1 []byte
@@ -38,32 +39,20 @@ type StrongProvableBroadcastImpl struct {
 	Signature2    tcrsa.Signature
 }
 
-// sid: session id
-func NewStrongProvableBroadcast(id int, sid int, proposal []byte) *ProvableBroadcastImpl {
-	logger.Debugf("[STRONG PROVABLE BROADCAST] Start Provable Broadcast")
-	ctx, cancel := context.WithCancel(context.Background())
+func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastImpl {
 	spb := &StrongProvableBroadcastImpl{
-		proposal:      proposal,
-		cancel:        cancel,
+		acs:             acs,
 	}
+	return spb
+}
 
-	msgEntrance := make(chan *pb.Msg)
-	spb.MsgEntrance = msgEntrance
-	spb.ID = uint32(id)
-	spb.Sid = uint32(sid)
-	logger.WithField("replicaID", id).Debug("[STRONG PROVABLE BROADCAST] Init command cache.")
+// sid: session id
+func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast() *ProvableBroadcastImpl {
+	logger.Info("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [SPB] Start Strong Provable Broadcast")
 
-	// read config
-	spb.Config = config.HotStuffConfig{}
-	spb.Config.ReadConfig()
+	spb.EchoVote = make([]*tcrsa.SigShare, 0)
 
-	privateKey, err := go_hotstuff.ReadThresholdPrivateKeyFromFile(spb.GetSelfInfo().PrivateKey)
-	if err != nil {
-		logger.Fatal(err)
-	}
-	spb.Config.PrivateKey = privateKey
-
-	spbValuetMsg := bhs.Msg(pb.MsgType_SPBVALUE, id, sid, proposal, nil)
+	spbValuetMsg := spb.acs.Msg(pb.MsgType_SPBVALUE, id, sid, proposal, nil)
 
 	// create msg hash
 	marshal, _ := proto.Marshal(spbValuetMsg)

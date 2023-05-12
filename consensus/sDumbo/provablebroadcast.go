@@ -34,6 +34,8 @@ type ProvableBroadcastImpl struct {
 	//Sid           int
 
 	//Proposal      []byte
+	// vectors       []MvbaInputVector
+	// futureVectors []MvbaInputVector
 	EchoVote      []*tcrsa.SigShare
 	DocumentHash  []byte
 	//DocumentHash2 []byte
