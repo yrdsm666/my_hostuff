@@ -24,10 +24,12 @@ import (
 // var logger = logging.GetLogger()
 
 type StrongProvableBroadcast interface {
-	startStrongProvableBroadcast()
+	startStrongProvableBroadcast(proposal []byte)
 	controller(task string)
 	getSignature1() tcrsa.Signature
 	getSignature2() tcrsa.Signature
+	getProvableBroadcast1Status() bool
+	getProvableBroadcast2Status() bool
 	// handleStrongProvableBroadcastMsg(msg *pb.Msg)
 }
 
@@ -55,7 +57,7 @@ func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastI
 }
 
 // sid: session id
-func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []byte) *StrongProvableBroadcastImpl {
+func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []byte) {
 	logger.Info("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [SPB] Start Strong Provable Broadcast")
 
 	spb.acs.taskPhase = "SPB"
@@ -77,8 +79,9 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 			go acs.proBroadcast1.startProvableBroadcast(proposal)
 		}else{
 			signature := spb.proBroadcast2.getSignature()
-			spb.Signature2 = signature
-			go spb.acs.broadcastPbFinal(signature2)
+			spb.acs.taskSignal <- "getSpbValue"
+			// spb.Signature2 = signature
+			// go spb.acs.broadcastPbFinal(signature2)
 		}
 	}
 }
@@ -97,4 +100,12 @@ func (spb *StrongProvableBroadcastImpl) getSignature2() tcrsa.Signature {
 		return nil
 	}
 	return spb.Signature2
+}
+
+func (spb *StrongProvableBroadcastImpl) getProvableBroadcast1Status() bool {
+	return spb.proBroadcast1.complete
+}
+
+func (spb *StrongProvableBroadcastImpl) getProvableBroadcast2Status() bool {
+	return spb.proBroadcast2.complete
 }

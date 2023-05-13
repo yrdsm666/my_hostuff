@@ -39,15 +39,16 @@ type CommonSubsetImpl struct {
 	// msgEndFlag         bool
 
 	proBroadcast       ProvableBroadcast
-	// mvbaInputVectors map[int][]MvbaInputVector
-	vectors            []MvbaInputVector
-	futureVectorsCache []MvbaInputVector
+	mvba               SpeedMvba
+	// vectors map[int][]Vector
+	vectors            []Vector
+	futureVectorsCache []Vector
 }
 
-type MvbaInputVector struct{
+type Vector struct{
 	id            int
 	sid           int
-	proposalHash  []byte
+	proposal      []byte
 	Signature     tcrsa.Signature
 }
 
@@ -80,8 +81,9 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	acs.TxnSet = go_hotstuff.NewCmdSet()
 
 	acs.proBroadcast = NewProvableBroadcast(acs)
+	acs.mvba = NewSpeedMvba(acs)
 
-	acs.futureVectorsCache = make([]MvbaInputVector, 0)
+	acs.futureVectorsCache = make([]Vector, 0)
 
 	// acs.controller("start")
 	go acs.receiveTaskSignal(ctx)
@@ -146,15 +148,21 @@ func (acs *CommonSubsetImpl) controller(task string) {
 			acs.broadcastPbFinal()
 		}else if acs.taskPhase == "SPB"{
 			// 注意当第一个PB完成后广播Done消息
-			// go acs.mvbaController(task)
+			go acs.mvba.controller(task)
 		}
+	case "getSpbValue":
+		go acs.mvba.controller(task)
+	case "getCoin":
+		go acs.mvba.controller(task)
 	case "pbFinal":
 		if acs.taskPhase == "PB"{
-			go acs.startNewInstance()
+			go acs.mvba.startSpeedMvba(acs.vectors)
 		}
-	case "SPBFinal":
-		//去mvba的控制器
-		go acs.startNewInstance()
+	// case "spbFinal":
+	// 	//去mvba的控制器
+	// 	if acs.taskPhase == "SPB"{
+	// 		go acs.mvba.controller(task)
+	// 	}
 	case "coinFinal":
 		//去mvba的控制器
 		go acs.startNewInstance()
@@ -168,7 +176,7 @@ func (acs *CommonSubsetImpl) controller(task string) {
 
 func (acs *CommonSubsetImpl) startNewInstance() {
 	acs.Sid = acs.Sid + 1
-	acs.vectors = make([]MvbaInputVector, 0)
+	acs.vectors = make([]Vector, 0)
 
 	vectors := acs.futureVectorsCache[:]
 	for i, v := range vectors {
@@ -224,10 +232,10 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 	if ( err != nil || flag==false ) {
 		logger.WithField("error", err.Error()).Error("[replica_"+strconv.Itoa(int(acs.ID))+"] [sid_"+strconv.Itoa(int(acs.Sid))+"] verfiy signature failed.")
 	}
-	wVector := MvbaInputVector{
+	wVector := Vector{
 		id:            senderId,
 		sid:           senderSid,
-		proposalHash:  senderProposal,
+		proposal:      senderProposal,
 		Signature:     *signature,
 	}
 	if senderSid > acs.Sid {
@@ -242,7 +250,7 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		for i := 0; i < 2*acs.Config.F+1; i++{
 			fmt.Println("node: ", acs.vectors[i].id)
 			fmt.Println("Sid: ", acs.vectors[i].sid)
-			fmt.Println("proposalHashLen: ",len(acs.vectors[i].proposalHash))
+			fmt.Println("proposalHashLen: ",len(acs.vectors[i].proposal))
 		}
 		fmt.Println("[ACS] GOOD WORK!.")
 		fmt.Println("---------------- [ACS] -----------------")
@@ -256,7 +264,7 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		// if acs.taskEndFlag == true {
 		// 	acs.restart <- true
 		// }
-		acs.taskSignal <- "ProvableBroadcastFinal"
+		acs.taskSignal <- "pbFinal"
 	}
 }
 

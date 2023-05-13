@@ -24,7 +24,7 @@ import (
 // var logger = logging.GetLogger()
 
 type CommonCoin interface {
-	startCommonCoin(proposal []byte)
+	startCommonCoin(sidStr string)
 	handleCommonCoinMsg(msg *pb.Msg)
 	getCoin() tcrsa.Signature
 }
@@ -72,7 +72,7 @@ func (cc *CommonCoinImpl) startCommonCoin(sidStr string) {
 	// prb.acs.MsgEntrance <- pbValueMsg
 }
 
-func (cc *CommonCoinImpl) handleCommonCoiMsg(msg *pb.Msg) {
+func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 	switch msg.Payload.(type) {
 	case *pb.Msg_COINSHARE:
 		coinShare := msg.GetCoinShare()
@@ -97,6 +97,7 @@ func (cc *CommonCoinImpl) handleCommonCoiMsg(msg *pb.Msg) {
 			signature, _ := go_hotstuff.CreateFullSignature([]byte(cc.sidStr), cc.coinShares, cc.acs.Config.PublicKey)
 			cc.Coin = signature
 			cc.complete = true
+			cc.acs.taskSignal <- "getCoin"
 		} 
 		break
 	default:
