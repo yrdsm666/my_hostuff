@@ -24,7 +24,7 @@ import (
 //var logger = logging.GetLogger()
 
 type ProvableBroadcast interface {
-	startProvableBroadcast(proposal []byte)
+	startProvableBroadcast(proposal []byte, proof []byte, verfiyMethod func(int, int, int, []byte, []byte, *tcrsa.KeyMeta) bool)
 	handleProvableBroadcastMsg(msg *pb.Msg)
 	getSignature() tcrsa.Signature
 }
@@ -34,6 +34,8 @@ type ProvableBroadcastImpl struct {
 	acs           *CommonSubsetImpl
 
 	proposal      []byte
+	proof         []byte
+	valueVerfiy   func([]byte, []byte) bool
 	complete      bool
 	// vectors       []MvbaInputVector
 	// futureVectors []MvbaInputVector
@@ -50,15 +52,17 @@ func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 	return prb
 }
 
-func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte) {
+func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof []byte, valueValidation func(int, int, int, []byte, []byte, *tcrsa.KeyMeta) bool) {
 	logger.Info("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [PB] Start Provable Broadcast")
 
 	prb.EchoVote = make([]*tcrsa.SigShare, 0)
+	prb.valueVerfiy = valueValidation
 	prb.proposal = proposal
+	prb.proof = proof
 
 	id := int(prb.acs.ID)
 
-	pbValueMsg := prb.acs.Msg(pb.MsgType_PBVALUE, id, prb.acs.Sid, prb.proposal, nil)
+	pbValueMsg := prb.acs.Msg(pb.MsgType_PBVALUE, id, prb.acs.Sid, prb.proposal, prb.proof)
 
 	// create msg hash
 	data := getMsgdata(id, prb.acs.Sid, prb.proposal)
@@ -86,6 +90,10 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		}).Info("[replica_"+strconv.Itoa(int(prb.acs.ID))+"] [sid_"+strconv.Itoa(prb.acs.Sid)+"] [PB] Get PbValue msg")
 
 		senderProposal := pbValueMsg.Proposal
+		senderProof := pbValueMsg.Proof
+		if prb.valueVerfiy(senderId, senderSid, senderProposal, senderProof) == false{
+			return
+		}
 		marshalData := getMsgdata(senderId, senderSid, senderProposal)
 		documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, prb.acs.Config.PublicKey)
 		partSig, err := go_hotstuff.TSign(documentHash, prb.acs.Config.PrivateKey, prb.acs.Config.PublicKey)

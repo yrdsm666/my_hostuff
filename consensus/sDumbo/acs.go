@@ -202,7 +202,7 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 	proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
 	acs.proposalHash = proposalHash
 	acs.taskPhase = "PB"
-	go acs.proBroadcast.startProvableBroadcast(proposalHash)
+	go acs.proBroadcast.startProvableBroadcast(proposalHash, nil, CheckValue)
 }
 
 func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
@@ -281,5 +281,26 @@ func (acs *CommonSubsetImpl) broadcastPbFinal() {
 
 }
 
+func CheckValue(id int, sid int, j int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool{
+	return true
+}
+
+func verfiyThld(id int, sid int, j int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool{
+	signature := &tcrsa.Signature{}
+	err := json.Unmarshal(proof, signature)
+	if err != nil {
+		logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
+	}
+	newProposal := proposal + []byte(j)
+	marshalData := getMsgdata(id, sid, newProposal)
+
+	flag, err := go_hotstuff.TVerify(publicKey, *signature, marshalData)
+	if ( err != nil || flag==false ) {
+		logger.WithField("error", err.Error()).Error(" verfiyThld failed.")
+		return false
+	}
+	return true
+
+}
 
 

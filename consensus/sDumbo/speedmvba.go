@@ -38,9 +38,13 @@ type SpeedMvbaImpl struct {
 	cc            CommonCoin
 	doneVectors   []Vector
 	finalVectors  []Vector
+	leader        int
 	DFlag         int
 	DocumentHash  []byte
 	Signature     tcrsa.Signature
+
+	lock          sync.Mutex
+	waitleader    *sync.Cond
 
 	// SPB           *NewStrongProvableBroadcast
 	// cc            *NewCommonCoin
@@ -62,6 +66,8 @@ func (mvba *SpeedMvbaImpl) startSpeedMvba(vectors []Vector) {
 	proposal, _ := json.Marshal(vectors)
 	mvba.acs.taskPhase = "MVBA"
 	mvba.proposal = proposal
+	mvba.leader = 0
+	mvba.waitleader = sync.NewCond(&mvba.lock)
 	mvba.spb = NewStrongProvableBroadcast(mvba.acs)
 	mvba.cc = NewCommonCoin(mvba.acs)
 
@@ -87,7 +93,17 @@ func (mvba *SpeedMvbaImpl) controller(task string) {
 	case "doneFinal":
 		go mvba.cc.startCommonCoin("coin" + string(mvba.acs.ID) + string(mvba.acs.Sid))
 	case "getCoin":
-		
+		signature := mvba.cc.getCoin()
+		marshalData, _ := json.Marshal(signature)
+		signatureHash, _ := go_hotstuff.CreateDocumentHash(marshalData, mvba.acs.Config.PublicKey)
+		mvba.leader = BytesToInt(signatureHash) % mvba.acs.Config.N + 1
+		mvba.waitleader.Broadcast()
+		for _, vector := range mvba.finalVectors{
+			if vector.id == mvba.leader{
+				mvba.broadcastHalt(vector)
+				break
+			}
+		}
 	}
 }
 
@@ -175,6 +191,18 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 			mvba.broadcastDone()
 		}
 		break
+	case *pb.Msg_Halt:
+		haltMsg := msg.GetHalt()
+		// senderSid := int(halt.Sid)
+		senderFinal := haltMsg.Final
+		finalVector := &Vector
+		err := json.Unmarshal(senderFinal, finalVector)
+		if err != nil {
+			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
+		}
+		if mvba.leader==0{
+			mvba.waitleader.Wait()
+		}
 	default:
 		logger.Warn("[MVBA] Receive unsupported msg")
 	}
@@ -192,4 +220,24 @@ func (mvba *SpeedMvbaImpl) broadcastDone() {
 	}
 
 	// send to self
+}
+
+func (mvba *SpeedMvbaImpl) broadcastHalt(vector Vector) {
+	marshalData, _ := json.Marshal(vector)
+	id := int(mvba.acs.ID)
+	haltMsg := mvba.acs.Msg(pb.MsgType_Halt, id, mvba.acs.Sid, marshalData)
+	// broadcast msg
+	err := mvba.acs.Broadcast(haltMsg)
+	if err != nil {
+		logger.WithField("error", err.Error()).Error("Broadcast failed.")
+	}
+
+	// send to self
+}
+
+func BytesToInt(bys []byte) int {
+	bytebuff := bytes.NewBuffer(bys)
+	var data int64
+	binary.Read(bytebuff, binary.BigEndian, &data)
+	return int(data)
 }

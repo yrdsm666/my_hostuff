@@ -66,8 +66,9 @@ func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []
 	// spb.Signature2 = tcrsa.SigShare{}
 	spb.proBroadcast1 = NewProvableBroadcast(spb.acs)
 	spb.proBroadcast2 = NewProvableBroadcast(spb.acs)
+	newProposal = proposal + []byte(1)
 
-	go spb.proBroadcast1.startProvableBroadcast(proposal)
+	go spb.proBroadcast1.startProvableBroadcast(newProposal, nil, CheckValue)
 }
 
 func (spb *StrongProvableBroadcastImpl) controller(task string) {
@@ -75,8 +76,9 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 		if spb.proBroadcast2.complete == false{
 			signature := spb.proBroadcast1.getSignature()
 			spb.Signature1 = signature
-			proposal, _ := json.Marshal(signature1)
-			go acs.proBroadcast1.startProvableBroadcast(proposal)
+			marshalData, _ := json.Marshal(signature1)
+			newProposal := spb.proposal + []byte(2)
+			go acs.proBroadcast2.startProvableBroadcast(spb.proposal, marshalData, verfiyThld)
 		}else{
 			signature := spb.proBroadcast2.getSignature()
 			spb.acs.taskSignal <- "getSpbValue"
