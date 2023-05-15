@@ -1,24 +1,25 @@
 package sDumbo
 
 import (
-	"bytes"
-	"context"
+	// "bytes"
+	// "context"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"github.com/golang/protobuf/proto"
+
+	// "errors"
+	// "github.com/golang/protobuf/proto"
 	"github.com/niclabs/tcrsa"
 	"github.com/sirupsen/logrus"
-	"github.com/syndtr/goleveldb/leveldb"
+
+	// "github.com/syndtr/goleveldb/leveldb"
 	go_hotstuff "github.com/wjbbig/go-hotstuff"
-	"github.com/wjbbig/go-hotstuff/config"
-	"github.com/wjbbig/go-hotstuff/consensus"
-	"github.com/wjbbig/go-hotstuff/logging"
+	// "github.com/wjbbig/go-hotstuff/config"
+	// "github.com/wjbbig/go-hotstuff/consensus"
+	// "github.com/wjbbig/go-hotstuff/logging"
 	pb "github.com/wjbbig/go-hotstuff/proto"
-	"os"
+	// "os"
 	"strconv"
-	"sync"
-	
+	// "sync"
 )
 
 // var logger = logging.GetLogger()
@@ -30,25 +31,25 @@ type CommonCoin interface {
 }
 
 type CommonCoinImpl struct {
-	acs           *CommonSubsetImpl
-	
-	sidStr        string
-	complete      bool
-	coinShares    []*tcrsa.SigShare
-	DocumentHash  []byte
-	Coin          tcrsa.Signature
+	acs *CommonSubsetImpl
+
+	sidStr       string
+	complete     bool
+	coinShares   []*tcrsa.SigShare
+	DocumentHash []byte
+	Coin         tcrsa.Signature
 }
 
 func NewCommonCoin(acs *CommonSubsetImpl) *CommonCoinImpl {
 	cc := &CommonCoinImpl{
-		acs:             acs,
-		complete:        false,
+		acs:      acs,
+		complete: false,
 	}
 	return cc
 }
 
 func (cc *CommonCoinImpl) startCommonCoin(sidStr string) {
-	logger.Info("[replica_"+strconv.Itoa(int(cc.acs.ID))+"] [sid_"+strconv.Itoa(cc.acs.Sid)+"] [CC] Start Provable Broadcast")
+	logger.Info("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + "] [CC] Start Provable Broadcast")
 
 	cc.coinShares = make([]*tcrsa.SigShare, 0)
 	cc.sidStr = sidStr
@@ -98,7 +99,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 			cc.Coin = signature
 			cc.complete = true
 			cc.acs.taskSignal <- "getCoin"
-		} 
+		}
 		break
 	default:
 		logger.Warn("Receive unsupported msg")
@@ -106,8 +107,8 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 }
 
 func (cc *CommonCoinImpl) getCoin() tcrsa.Signature {
-	if cc.complete == false{
-		logger.Error("[replica_"+strconv.Itoa(int(cc.acs.ID))+"] [sid_"+strconv.Itoa(cc.acs.Sid)+"] [cc] Common coin is not complet")
+	if cc.complete == false {
+		logger.Error("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + "] [cc] Common coin is not complet")
 		return nil
 	}
 	return cc.Coin

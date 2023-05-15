@@ -1,7 +1,7 @@
 package sDumbo
 
 import (
-	"bytes"
+	// "bytes"
 	"context"
 	// "encoding/hex"
 	"encoding/json"
@@ -9,47 +9,48 @@ import (
 	//"github.com/golang/protobuf/proto"
 	"github.com/niclabs/tcrsa"
 	"github.com/sirupsen/logrus"
+
 	//"github.com/syndtr/goleveldb/leveldb"
 	go_hotstuff "github.com/wjbbig/go-hotstuff"
 	"github.com/wjbbig/go-hotstuff/config"
 	"github.com/wjbbig/go-hotstuff/consensus"
 	"github.com/wjbbig/go-hotstuff/logging"
 	pb "github.com/wjbbig/go-hotstuff/proto"
+
 	//"os"
 	"strconv"
 	//"sync"
-	"time"
 	"fmt"
-	
+	"time"
 )
 
 var logger = logging.GetLogger()
 
 type CommonSubsetImpl struct {
 	consensus.AsynchronousImpl
-	
-	Sid                int
-	proposal           []byte
-	proposalHash       []byte    
-	cancel             context.CancelFunc
-	taskSignal         chan string
-	taskPhase          string
+
+	Sid          int
+	proposal     []byte
+	proposalHash []byte
+	cancel       context.CancelFunc
+	taskSignal   chan string
+	taskPhase    string
 	// restart            chan bool
 	// taskEndFlag        bool
 	// msgEndFlag         bool
 
-	proBroadcast       ProvableBroadcast
-	mvba               SpeedMvba
+	proBroadcast ProvableBroadcast
+	mvba         SpeedMvba
 	// vectors map[int][]Vector
 	vectors            []Vector
 	futureVectorsCache []Vector
 }
 
-type Vector struct{
-	id            int
-	sid           int
-	proposal      []byte
-	Signature     tcrsa.Signature
+type Vector struct {
+	id        int
+	sid       int
+	proposal  []byte
+	Signature tcrsa.Signature
 }
 
 // sid: session id
@@ -57,8 +58,8 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	logger.Debugf("[ACS] Start Common Subset.")
 	ctx, cancel := context.WithCancel(context.Background())
 	acs := &CommonSubsetImpl{
-		Sid:           0,
-		cancel:        cancel,
+		Sid:    0,
+		cancel: cancel,
 	}
 
 	msgEntrance := make(chan *pb.Msg)
@@ -144,9 +145,9 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		//完全结束和重新开始不一样
 		go acs.startNewInstance()
 	case "getPbValue":
-		if acs.taskPhase == "PB"{
+		if acs.taskPhase == "PB" {
 			acs.broadcastPbFinal()
-		}else if acs.taskPhase == "SPB"{
+		} else if acs.taskPhase == "SPB" {
 			// 注意当第一个PB完成后广播Done消息
 			go acs.mvba.controller(task)
 		}
@@ -155,7 +156,7 @@ func (acs *CommonSubsetImpl) controller(task string) {
 	case "getCoin":
 		go acs.mvba.controller(task)
 	case "pbFinal":
-		if acs.taskPhase == "PB"{
+		if acs.taskPhase == "PB" {
 			go acs.mvba.startSpeedMvba(acs.vectors)
 		}
 	// case "spbFinal":
@@ -180,18 +181,18 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 
 	vectors := acs.futureVectorsCache[:]
 	for i, v := range vectors {
-		if v.sid == acs.Sid{
+		if v.sid == acs.Sid {
 			acs.vectors = append(acs.vectors, v)
 			acs.futureVectorsCache = append(acs.futureVectorsCache[:i], acs.futureVectorsCache[i+1:]...)
 		}
 	}
 
-	logger.Info("[replica_"+strconv.Itoa(int(acs.ID))+"] [sid_"+strconv.Itoa(int(acs.Sid))+"] startNewInstance")
+	logger.Info("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] startNewInstance")
 	var txs []string
 	for {
 		BatchSize := 2
 		txs = acs.TxnSet.GetFirst(BatchSize) //int(ehs.Config.BatchSize)，取前两个元素
-		if len(txs) == BatchSize { //如果txs为nil，会报错吗？
+		if len(txs) == BatchSize {           //如果txs为nil，会报错吗？
 			break
 		}
 		time.Sleep(2000 * time.Millisecond)
@@ -211,17 +212,17 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 	senderSid := int(pbFinal.Sid)
 	senderProposal := pbFinal.Proposal
 	// Ignore messages from old sid
-	if senderSid < acs.Sid{
+	if senderSid < acs.Sid {
 		logger.WithFields(logrus.Fields{
 			"senderId":  senderId,
-			"senderSid":  senderSid,
-		}).Warn("[replica_"+strconv.Itoa(int(acs.ID))+"] [sid_"+strconv.Itoa(acs.Sid)+"] [PB] Get mismatch Pbfinal msg")
+			"senderSid": senderSid,
+		}).Warn("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(acs.Sid) + "] [PB] Get mismatch Pbfinal msg")
 		return
 	}
 	logger.WithFields(logrus.Fields{
 		"senderId":  senderId,
-		"senderSid":  senderSid,
-	}).Info("[replica_"+strconv.Itoa(int(acs.ID))+"] [sid_"+strconv.Itoa(int(acs.Sid))+"] [PB] Get PbFinal msg")
+		"senderSid": senderSid,
+	}).Info("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] [PB] Get PbFinal msg")
 	signature := &tcrsa.Signature{}
 	err := json.Unmarshal(pbFinal.Signature, signature)
 	if err != nil {
@@ -229,28 +230,28 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 	}
 	marshalData := getMsgdata(senderId, senderSid, senderProposal)
 	flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature, marshalData)
-	if ( err != nil || flag==false ) {
-		logger.WithField("error", err.Error()).Error("[replica_"+strconv.Itoa(int(acs.ID))+"] [sid_"+strconv.Itoa(int(acs.Sid))+"] verfiy signature failed.")
+	if err != nil || flag == false {
+		logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] verfiy signature failed.")
 	}
 	wVector := Vector{
-		id:            senderId,
-		sid:           senderSid,
-		proposal:      senderProposal,
-		Signature:     *signature,
+		id:        senderId,
+		sid:       senderSid,
+		proposal:  senderProposal,
+		Signature: *signature,
 	}
 	if senderSid > acs.Sid {
 		acs.futureVectorsCache = append(acs.vectors, wVector)
 	} else {
 		acs.vectors = append(acs.vectors, wVector)
-	} 
+	}
 	if len(acs.vectors) == 2*acs.Config.F+1 {
 		fmt.Println("")
 		fmt.Println("---------------- [ACS] -----------------")
 		fmt.Println("副本：", acs.ID)
-		for i := 0; i < 2*acs.Config.F+1; i++{
+		for i := 0; i < 2*acs.Config.F+1; i++ {
 			fmt.Println("node: ", acs.vectors[i].id)
 			fmt.Println("Sid: ", acs.vectors[i].sid)
-			fmt.Println("proposalHashLen: ",len(acs.vectors[i].proposal))
+			fmt.Println("proposalHashLen: ", len(acs.vectors[i].proposal))
 		}
 		fmt.Println("[ACS] GOOD WORK!.")
 		fmt.Println("---------------- [ACS] -----------------")
@@ -281,11 +282,11 @@ func (acs *CommonSubsetImpl) broadcastPbFinal() {
 
 }
 
-func CheckValue(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool{
+func CheckValue(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool {
 	return true
 }
 
-func verfiyThld(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool{
+func verfiyThld(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool {
 	signature := &tcrsa.Signature{}
 	err := json.Unmarshal(proof, signature)
 	if err != nil {
@@ -296,12 +297,10 @@ func verfiyThld(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa
 	marshalData := getMsgdata(id, sid, proposal)
 
 	flag, err := go_hotstuff.TVerify(publicKey, *signature, marshalData)
-	if ( err != nil || flag==false ) {
+	if err != nil || flag == false {
 		logger.WithField("error", err.Error()).Error(" verfiyThld failed.")
 		return false
 	}
 	return true
 
 }
-
-
