@@ -40,8 +40,10 @@ type SpeedMvbaImpl struct {
 	finalVectors  []Vector
 	leader        int
 	DFlag         int
+	Ready         int
 	DocumentHash  []byte
 	Signature     tcrsa.Signature
+	complete      bool
 
 	lock          sync.Mutex
 	waitleader    *sync.Cond
@@ -53,7 +55,7 @@ type SpeedMvbaImpl struct {
 func NewSpeedMvba(acs *CommonSubsetImpl) *SpeedMvbaImpl {
 	mvba := &SpeedMvbaImpl{
 		acs:             acs,
-		//Proposal:      proposal,
+		complete:        false,
 	}
 	return mvba
 }
@@ -101,9 +103,18 @@ func (mvba *SpeedMvbaImpl) controller(task string) {
 		for _, vector := range mvba.finalVectors{
 			if vector.id == mvba.leader{
 				mvba.broadcastHalt(vector)
-				break
+				mvba.complete = true
+				return
 			}
 		}
+		mvba.Ready = 1
+		for _, vector := range mvba.doneVectors{
+			if vector.id == mvba.leader{
+				mvba.broadcastPreVote(1)
+				return
+			}
+		}
+		mvba.broadcastPreVote(0)
 	}
 }
 
@@ -123,7 +134,9 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 		}
-		marshalData := getMsgdata(senderId, senderSid, senderProposal)
+		j := []byte("1")
+		newProposal := append(senderProposal[:], j[0])
+		marshalData := getMsgdata(senderId, senderSid, newProposal)
 		flag, err := go_hotstuff.TVerify(mvba.acs.Config.PublicKey, *signature, marshalData)
 		if ( err != nil || flag==false ) {
 			logger.WithField("error", err.Error()).Error("[replica_"+strconv.Itoa(int(mvba.acs.ID))+"] [sid_"+strconv.Itoa(int(mvba.acs.Sid))+"] [MVBA] verfiy done signature failed.")
@@ -161,30 +174,25 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 			"senderId":  senderId,
 			"senderSid":  senderSid,
 		}).Info("[replica_"+strconv.Itoa(int(mvba.acs.ID))+"] [sid_"+strconv.Itoa(mvba.acs.Sid)+"] [MVBA] Get spbFinal msg")
-		signature1 := &tcrsa.Signature{}
-		err := json.Unmarshal(spbFina.Signature1, signature1)
+		signature := &tcrsa.Signature{}
+		err := json.Unmarshal(spbFina.Signature, signature)
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 		}
-		signature2 := &tcrsa.Signature{}
-		err = json.Unmarshal(spbFina.Signature2, signature2)
-		if err != nil {
-			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
+		
+
+		flag, err := verfiyFinalMsg(senderId, senderSid, proposal, *signature, mvba.acs.Config.PublicKey)
+		if ( err != nil || flag==false ) {
+			logger.WithField("error", err.Error()).Error("[replica_"+strconv.Itoa(int(mvba.acs.ID))+"] [sid_"+strconv.Itoa(int(mvbaacs.Sid))+"] [MVBA] verfiy signature failed.")
 		}
 
-		marshalData1 := getMsgdata(senderId, senderSid, senderProposal)
-		flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature1, marshalData)
-		if ( err != nil || flag==false ) {
-			logger.WithField("error", err.Error()).Error("[replica_"+strconv.Itoa(int(mvba.acs.ID))+"] [sid_"+strconv.Itoa(int(mvbaacs.Sid))+"] [MVBA] verfiy signature_1 failed.")
+		fVector := Vector{
+			id:            senderId,
+			sid:           senderSid,
+			proposal:      senderProposal,
+			Signature:     *signature,
 		}
-		signatureBytes, _ := json.Marshal(signature2)
-		marshalData2 := getMsgdata(senderId, senderSid, senderProposal)
-		flag, err = go_hotstuff.TVerify(acs.Config.PublicKey, *signature2, signatureBytes)
-		if ( err != nil || flag==false ) {
-			logger.WithField("error", err.Error()).Error("[replica_"+strconv.Itoa(int(mvba.acs.ID))+"] [sid_"+strconv.Itoa(int(mvbaacs.Sid))+"] [MVBA] verfiy signature_2 failed.")
-		}
-
-		mvba.finalVectors = append(mvba.finalVectors, dVector)
+		mvba.finalVectors = append(mvba.finalVectors, fVector)
 
 		if len(mvba.finalVectors) == 2*mvba.acs.Config.F+1 && mvba.DFlag == 0 {
 			mvba.DFlag = 1
@@ -200,9 +208,27 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 		}
-		if mvba.leader==0{
+		if mvba.leader == 0{
 			mvba.waitleader.Wait()
 		}
+		if mvba.leader != finalVector.id {
+			return
+		}
+		fId := finalVector.id
+		fSid := finalVector.sid
+		fProposal := finalVector.proposal
+		fsignature := finalVector.Signature
+
+		flag, err := verfiyFinalMsg(fId, fSid, fProposal, fsignature, mvba.acs.Config.PublicKey)
+		if ( err != nil || flag==false ) {
+			logger.WithField("error", err.Error()).Error("[replica_"+strconv.Itoa(int(mvba.acs.ID))+"] [sid_"+strconv.Itoa(int(mvbaacs.Sid))+"] [MVBA] verfiy signature failed.")
+			return
+		}
+		if mvba.complete == false{
+			mvba.complete = true
+		}
+
+		
 	default:
 		logger.Warn("[MVBA] Receive unsupported msg")
 	}
@@ -235,9 +261,35 @@ func (mvba *SpeedMvbaImpl) broadcastHalt(vector Vector) {
 	// send to self
 }
 
+func (mvba *SpeedMvbaImpl) broadcastPreVote(flag int, vector Vector) {
+	id := int(mvba.acs.ID)
+	haltMsg := mvba.acs.Msg(pb.MsgType_PreVote, id, mvba.acs.Sid, mvba.leader, vector.proposal, vector.signature)
+	// broadcast msg
+	err := mvba.acs.Broadcast(haltMsg)
+	if err != nil {
+		logger.WithField("error", err.Error()).Error("Broadcast failed.")
+	}
+
+	// send to self
+}
+
 func BytesToInt(bys []byte) int {
 	bytebuff := bytes.NewBuffer(bys)
 	var data int64
 	binary.Read(bytebuff, binary.BigEndian, &data)
 	return int(data)
+}
+
+func verfiyFinalMsg(id int, sid int, proposal []byte, signature tcrsa.Signature, publicKey *tcrsa.KeyMeta) bool{
+	j := []byte("2")
+	newProposal := append(senderProposal[:], j[0])
+	marshalData := getMsgdata(senderId, senderSid, newProposal)
+
+	flag, err := go_hotstuff.TVerify(publicKey, signature, marshalData)
+	if ( err != nil || flag==false ) {
+		logger.WithField("error", err.Error()).Error("verfiyFinalMsg failed.")
+		return false
+	}
+	return true
+
 }

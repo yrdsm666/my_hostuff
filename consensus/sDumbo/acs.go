@@ -1,7 +1,7 @@
 package sDumbo
 
 import (
-	//"bytes"
+	"bytes"
 	"context"
 	// "encoding/hex"
 	"encoding/json"
@@ -281,18 +281,19 @@ func (acs *CommonSubsetImpl) broadcastPbFinal() {
 
 }
 
-func CheckValue(id int, sid int, j int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool{
+func CheckValue(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool{
 	return true
 }
 
-func verfiyThld(id int, sid int, j int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool{
+func verfiyThld(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool{
 	signature := &tcrsa.Signature{}
 	err := json.Unmarshal(proof, signature)
 	if err != nil {
 		logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 	}
-	newProposal := proposal + []byte(j)
-	marshalData := getMsgdata(id, sid, newProposal)
+	// strj := []byte(string(j))
+	// newProposal := append(proposal[:], strj[0])
+	marshalData := getMsgdata(id, sid, proposal)
 
 	flag, err := go_hotstuff.TVerify(publicKey, *signature, marshalData)
 	if ( err != nil || flag==false ) {
