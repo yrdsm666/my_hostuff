@@ -3,7 +3,7 @@ package sDumbo
 import (
 	// "bytes"
 	"context"
-	// "encoding/hex"
+	"encoding/hex"
 	"encoding/json"
 	//"errors"
 	//"github.com/golang/protobuf/proto"
@@ -113,12 +113,24 @@ func (acs *CommonSubsetImpl) handleMsg(msg *pb.Msg) {
 		acs.TxnSet.Add(request.Cmd)
 		// send the request to the leader, if the replica is not the leader
 		break
-	case *pb.Msg_PbFinal:
-		acs.proBroadcast.handleProvableBroadcastMsg(msg)
 	case *pb.Msg_PbValue:
 		acs.proBroadcast.handleProvableBroadcastMsg(msg)
 	case *pb.Msg_PbEcho:
+		acs.proBroadcast.handleProvableBroadcastMsg(msg)
+	case *pb.Msg_PbFinal:
 		acs.handlePbFinal(msg)
+	case *pb.Msg_CoinShare:
+		acs.mvba.handleSpeedMvbaMsg(msg)
+	case *pb.Msg_SpbFinal:
+		acs.mvba.handleSpeedMvbaMsg(msg)
+	case *pb.Msg_Done:
+		acs.mvba.handleSpeedMvbaMsg(msg)
+	case *pb.Msg_Halt:
+		acs.mvba.handleSpeedMvbaMsg(msg)
+	case *pb.Msg_PreVote:
+		acs.mvba.handleSpeedMvbaMsg(msg)
+	case *pb.Msg_Vote:
+		acs.mvba.handleSpeedMvbaMsg(msg)
 	default:
 		logger.Warn("Receive unsupported msg")
 	}
@@ -139,11 +151,6 @@ func (acs *CommonSubsetImpl) controller(task string) {
 	switch task {
 	case "init":
 		go acs.startNewInstance()
-	case "end":
-		go acs.startNewInstance()
-	case "restart":
-		//完全结束和重新开始不一样
-		go acs.startNewInstance()
 	case "getPbValue":
 		if acs.taskPhase == "PB" {
 			acs.broadcastPbFinal()
@@ -159,17 +166,38 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		if acs.taskPhase == "PB" {
 			go acs.mvba.startSpeedMvba(acs.vectors)
 		}
-	// case "spbFinal":
-	// 	//去mvba的控制器
-	// 	if acs.taskPhase == "SPB"{
-	// 		go acs.mvba.controller(task)
-	// 	}
-	case "coinFinal":
-		//去mvba的控制器
-		go acs.startNewInstance()
-	case "voteFinal":
-		//去mvba的控制器
-		go acs.startNewInstance()
+	case "end":
+		// commit
+		fmt.Println("")
+		fmt.Println("---------------- [END_1] -----------------")
+		vector := acs.mvba.getLeaderVector()
+		fmt.Println("副本：", acs.ID)
+		fmt.Println("node: ", vector.id)
+		fmt.Println("Sid: ", vector.sid)
+		fmt.Println("proposal: ", hex.EncodeToString(vector.proposal))
+		fmt.Println(" GOOD WORK!.")
+		fmt.Println("---------------- [END_2] -----------------")
+	case "restartWithLeaderProposal":
+		fmt.Println("")
+		fmt.Println("---------------- [NEXT_l_1] -----------------")
+		vector := acs.mvba.getLeaderVector()
+		fmt.Println("副本：", acs.ID)
+		fmt.Println("node: ", vector.id)
+		fmt.Println("Sid: ", vector.sid)
+		fmt.Println("proposal: ", hex.EncodeToString(vector.proposal))
+		fmt.Println(" GOOD WORK!.")
+		fmt.Println("---------------- [NEXT_l_2] -----------------")
+	case "restart":
+		fmt.Println("")
+		fmt.Println("---------------- [NEXT_i_1] -----------------")
+		proposal := acs.mvba.getProposal()
+		//signature := acs.mvba.getSignature()
+		fmt.Println("副本：", acs.ID)
+		fmt.Println("node: ", acs.ID)
+		fmt.Println("Sid: ", acs.Sid)
+		fmt.Println("proposal: ", hex.EncodeToString(proposal))
+		fmt.Println(" GOOD WORK!.")
+		fmt.Println("---------------- [NEXT_i_2] -----------------")
 	default:
 		logger.Warn("Receive unsupported task signal")
 	}
@@ -216,22 +244,23 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		logger.WithFields(logrus.Fields{
 			"senderId":  senderId,
 			"senderSid": senderSid,
-		}).Warn("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(acs.Sid) + "] [PB] Get mismatch Pbfinal msg")
+		}).Warn("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(acs.Sid) + "] [ACS] Get mismatch Pbfinal msg")
 		return
 	}
 	logger.WithFields(logrus.Fields{
 		"senderId":  senderId,
 		"senderSid": senderSid,
-	}).Info("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] [PB] Get PbFinal msg")
+	}).Info("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] [ACS] Get PbFinal msg")
 	signature := &tcrsa.Signature{}
 	err := json.Unmarshal(pbFinal.Signature, signature)
 	if err != nil {
 		logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 	}
 	marshalData := getMsgdata(senderId, senderSid, senderProposal)
-	flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature, marshalData)
+	documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, acs.Config.PublicKey)
+	flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature, documentHash)
 	if err != nil || flag == false {
-		logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] verfiy signature failed.")
+		logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] [ACS] verfiy signature from PbFinal failed.")
 	}
 	wVector := Vector{
 		id:        senderId,
@@ -245,16 +274,16 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		acs.vectors = append(acs.vectors, wVector)
 	}
 	if len(acs.vectors) == 2*acs.Config.F+1 {
-		fmt.Println("")
-		fmt.Println("---------------- [ACS] -----------------")
-		fmt.Println("副本：", acs.ID)
-		for i := 0; i < 2*acs.Config.F+1; i++ {
-			fmt.Println("node: ", acs.vectors[i].id)
-			fmt.Println("Sid: ", acs.vectors[i].sid)
-			fmt.Println("proposalHashLen: ", len(acs.vectors[i].proposal))
-		}
-		fmt.Println("[ACS] GOOD WORK!.")
-		fmt.Println("---------------- [ACS] -----------------")
+		// fmt.Println("")
+		// fmt.Println("---------------- [ACS] -----------------")
+		// fmt.Println("副本：", acs.ID)
+		// for i := 0; i < 2*acs.Config.F+1; i++ {
+		// 	fmt.Println("node: ", acs.vectors[i].id)
+		// 	fmt.Println("Sid: ", acs.vectors[i].sid)
+		// 	fmt.Println("proposalHashLen: ", len(acs.vectors[i].proposal))
+		// }
+		// fmt.Println("[ACS] GOOD WORK!.")
+		// fmt.Println("---------------- [ACS] -----------------")
 		// 需要保证旧实例结束再启动新实例
 		// 不能同时执行新旧实例，代码不允许
 		// 达到新实例的启动条件时，仍然要执行旧实例，不然其他节点可能无法在上一个实例中结束
@@ -272,7 +301,7 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 func (acs *CommonSubsetImpl) broadcastPbFinal() {
 	signature := acs.proBroadcast.getSignature()
 	marshal, _ := json.Marshal(signature)
-	pbFinalMsg := acs.Msg(pb.MsgType_PBFINAL, int(acs.ID), acs.Sid, acs.proposal, marshal)
+	pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.Sid, acs.proposal, marshal)
 	// broadcast msg
 	err := acs.Broadcast(pbFinalMsg)
 	if err != nil {
@@ -295,10 +324,11 @@ func verfiyThld(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa
 	// strj := []byte(string(j))
 	// newProposal := append(proposal[:], strj[0])
 	marshalData := getMsgdata(id, sid, proposal)
+	documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, publicKey)
 
-	flag, err := go_hotstuff.TVerify(publicKey, *signature, marshalData)
+	flag, err := go_hotstuff.TVerify(publicKey, *signature, documentHash)
 	if err != nil || flag == false {
-		logger.WithField("error", err.Error()).Error(" verfiyThld failed.")
+		logger.WithField("error", err.Error()).Error("verfiy Thld failed.")
 		return false
 	}
 	return true

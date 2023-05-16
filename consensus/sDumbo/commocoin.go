@@ -49,7 +49,7 @@ func NewCommonCoin(acs *CommonSubsetImpl) *CommonCoinImpl {
 }
 
 func (cc *CommonCoinImpl) startCommonCoin(sidStr string) {
-	logger.Info("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + "] [CC] Start Provable Broadcast")
+	logger.Info("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + "] [CC] Start Common Coin")
 
 	cc.coinShares = make([]*tcrsa.SigShare, 0)
 	cc.sidStr = sidStr
@@ -58,10 +58,12 @@ func (cc *CommonCoinImpl) startCommonCoin(sidStr string) {
 
 	coinShare, err := go_hotstuff.TSign([]byte(cc.sidStr), cc.acs.Config.PrivateKey, cc.acs.Config.PublicKey)
 	if err != nil {
-		logger.WithField("error", err.Error()).Error("[CC] create the partial signature failed.")
+		logger.Error("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + " [CC] create the partial signature failed.")
+		return
 	}
 
-	coinShareMsg := cc.acs.Msg(pb.MsgType_COINSHARE, id, cc.acs.Sid, nil, coinShare)
+	coinShareBytes, _ := json.Marshal(coinShare)
+	coinShareMsg := cc.acs.CoinShareMsg(id, cc.acs.Sid, coinShareBytes)
 
 	// broadcast msg
 	err = cc.acs.Broadcast(coinShareMsg)
@@ -75,7 +77,7 @@ func (cc *CommonCoinImpl) startCommonCoin(sidStr string) {
 
 func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 	switch msg.Payload.(type) {
-	case *pb.Msg_COINSHARE:
+	case *pb.Msg_CoinShare:
 		coinShare := msg.GetCoinShare()
 		partSig := &tcrsa.SigShare{}
 		err := json.Unmarshal(coinShare.PartialSig, partSig)
@@ -88,14 +90,20 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 			logger.WithFields(logrus.Fields{
 				"error":        err.Error(),
 				"documentHash": hex.EncodeToString(cc.DocumentHash),
-			}).Warn("[CC] PBEchoVote: signature not verified!")
+			}).Warn("[CC] CoinShare: signature not verified!")
 			return
 		}
 
 		cc.coinShares = append(cc.coinShares, partSig)
 
 		if len(cc.coinShares) == 2*cc.acs.Config.F+1 {
-			signature, _ := go_hotstuff.CreateFullSignature([]byte(cc.sidStr), cc.coinShares, cc.acs.Config.PublicKey)
+			signature, err := go_hotstuff.CreateFullSignature([]byte(cc.sidStr), cc.coinShares, cc.acs.Config.PublicKey)
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"error":        err.Error(),
+				}).Error("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + "] [CC] CoinShare: create signature failed!")
+				return
+			}
 			cc.Coin = signature
 			cc.complete = true
 			cc.acs.taskSignal <- "getCoin"

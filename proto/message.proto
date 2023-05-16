@@ -19,6 +19,12 @@ message Msg {
     PbValue pbValue = 11;
     PbEcho pbEcho = 12;
     PbFinal pbFinal = 13;
+    CoinShare coinShare = 14;
+    SpbFinal spbFinal = 15;
+    Done done = 16;
+    Halt halt = 17;
+    PreVote preVote = 18;
+    Vote vote = 19;
   }
 //   string senderAddress = 11;
 }
@@ -92,8 +98,7 @@ message PbValue {
 message PbEcho {
   uint64 id = 1;
   uint64 sid = 2;
-  bytes proposal = 3;
-  bytes signShare = 4;
+  bytes partialSig = 3;
 }
 
 message PbFinal {
@@ -101,6 +106,52 @@ message PbFinal {
   uint64 sid = 2;
   bytes proposal = 3;
   bytes signature = 4;
+}
+
+message CoinShare {
+  uint64 id = 1;
+  uint64 sid = 2;
+  bytes partialSig = 3;
+}
+
+message SpbFinal {
+  uint64 id = 1;
+  uint64 sid = 2;
+  bytes proposal = 3;
+  bytes signature = 4;
+}
+
+message Done {
+  uint64 id = 1;
+  uint64 sid = 2;
+  bytes proposal = 3;
+  bytes signature = 4;
+}
+
+message Halt {
+  uint64 id = 1;
+  uint64 sid = 2;
+  bytes final = 3;
+}
+
+message PreVote {
+  uint64 id = 1;
+  uint64 sid = 2;
+  uint64 leader = 3;
+  uint64 flag = 4;
+  bytes proposal = 5;
+  bytes signature = 6;
+  bytes partialSig = 7;
+}
+
+message Vote {
+  uint64 id = 1;
+  uint64 sid = 2;
+  uint64 leader = 3;
+  uint64 flag = 4;
+  bytes proposal = 5;
+  bytes signature = 6;
+  bytes partialSig = 7;
 }
 
 service HotStuffService {

@@ -23,6 +23,12 @@ enum MsgType {
   PBVALUE = 8;
   PBECHO = 9;
   PBFINAL = 10;
+  COINSHARE = 11;
+  SPBFINAL = 12;
+  DONE = 13;
+  HALT = 14;
+  PREVOTE = 15;
+  VOTE = 16;
 }
 
 message QuorumCert {

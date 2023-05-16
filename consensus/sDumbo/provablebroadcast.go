@@ -65,7 +65,7 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof 
 
 	id := int(prb.acs.ID)
 
-	pbValueMsg := prb.acs.Msg(pb.MsgType_PBVALUE, id, prb.acs.Sid, prb.proposal, prb.proof)
+	pbValueMsg := prb.acs.PbValueMsg(id, prb.acs.Sid, prb.proposal, prb.proof)
 
 	// create msg hash
 	data := getMsgdata(id, prb.acs.Sid, prb.proposal)
@@ -91,20 +91,22 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			"senderId":  senderId,
 			"senderSid": senderSid,
 		}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get PbValue msg")
-
 		senderProposal := pbValueMsg.Proposal
 		senderProof := pbValueMsg.Proof
+
+		// external validity verification
 		if prb.valueVerfiy(senderId, senderSid, senderProposal, senderProof, prb.acs.Config.PublicKey) == false {
 			return
 		}
+		
 		marshalData := getMsgdata(senderId, senderSid, senderProposal)
 		documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, prb.acs.Config.PublicKey)
 		partSig, err := go_hotstuff.TSign(documentHash, prb.acs.Config.PrivateKey, prb.acs.Config.PublicKey)
 		if err != nil {
-			logger.WithField("error", err.Error()).Error("create the partial signature failed.")
+			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbValue: create the partial signature failed.")
 		}
 		partSigBytes, _ := json.Marshal(partSig)
-		pbEchoMsg := prb.acs.Msg(pb.MsgType_PBECHO, int(prb.acs.ID), senderSid, nil, partSigBytes)
+		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, partSigBytes)
 		// reply msg to sender
 		err = prb.acs.Unicast(prb.acs.GetNetworkInfo()[uint32(senderId)], pbEchoMsg)
 		if err != nil {
@@ -124,7 +126,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			logger.WithFields(logrus.Fields{
 				"senderId":  int(pbEchoMsg.Id),
 				"senderSid": senderSid,
-			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get mismatch PbEcho msg")
+			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get mismatch sid PbEcho msg")
 			break
 		}
 		logger.WithFields(logrus.Fields{
@@ -133,7 +135,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get pbEcho msg")
 
 		partSig := &tcrsa.SigShare{}
-		err := json.Unmarshal(pbEchoMsg.SignShare, partSig)
+		err := json.Unmarshal(pbEchoMsg.PartialSig, partSig)
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
 		}
@@ -143,7 +145,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			logger.WithFields(logrus.Fields{
 				"error":        err.Error(),
 				"documentHash": hex.EncodeToString(prb.DocumentHash),
-			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEchoVote: signature not verified!")
+			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: signature not verified!")
 			return
 		}
 
@@ -155,7 +157,8 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 				logger.WithFields(logrus.Fields{
 					"error":        err.Error(),
 					"documentHash": hex.EncodeToString(prb.DocumentHash),
-				}).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEchoVote: create signature failed!")
+				}).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: create signature failed!")
+				return
 			}
 			prb.complete = true
 			prb.Signature = signature
@@ -163,18 +166,18 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 				"signature":    len(signature),
 				"documentHash": len(prb.DocumentHash),
 				"echoVote":     len(prb.EchoVote),
-			}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEchoVote: create signature")
+			}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: create signature")
 			prb.acs.taskSignal <- "getPbValue"
 		}
 		break
 	default:
-		logger.Warn("[PROVABLE BROADCAST] Receive unsupported msg")
+		logger.Warn("[PB] Receive unsupported msg")
 	}
 }
 
 func (prb *ProvableBroadcastImpl) getSignature() tcrsa.Signature {
 	if prb.complete == false {
-		logger.Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Provable Broadcast is not complet")
+		logger.Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] getSignature: Provable Broadcast is not complet")
 		return nil
 	}
 	return prb.Signature

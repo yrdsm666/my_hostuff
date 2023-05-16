@@ -82,9 +82,8 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 			go spb.proBroadcast2.startProvableBroadcast(newProposal, marshalData, verfiyThld)
 		} else {
 			signature := spb.proBroadcast2.getSignature()
-			spb.acs.taskSignal <- "getSpbValue"
 			spb.Signature2 = signature
-			// go spb.acs.broadcastPbFinal(signature2)
+			spb.acs.taskSignal <- "getSpbValue"
 		}
 	}
 }
