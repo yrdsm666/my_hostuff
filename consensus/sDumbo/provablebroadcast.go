@@ -29,6 +29,7 @@ type ProvableBroadcast interface {
 	startProvableBroadcast(proposal []byte, proof []byte, verfiyMethod func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool)
 	handleProvableBroadcastMsg(msg *pb.Msg)
 	getSignature() tcrsa.Signature
+	getProposal() []byte
 	getStatus() bool
 }
 
@@ -60,6 +61,9 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof 
 
 	prb.EchoVote = make([]*tcrsa.SigShare, 0)
 	prb.valueVerfiy = valueValidation
+	// fmt.Println("valueValidation:")
+	// fmt.Println(valueValidation)
+	// fmt.Println(prb.valueVerfiy)
 	prb.proposal = proposal
 	prb.proof = proof
 
@@ -78,7 +82,7 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof 
 	}
 
 	// vote self
-	// prb.acs.MsgEntrance <- pbValueMsg
+	prb.acs.MsgEntrance <- pbValueMsg
 }
 
 func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
@@ -92,12 +96,18 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			"senderSid": senderSid,
 		}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get PbValue msg")
 		senderProposal := pbValueMsg.Proposal
-		senderProof := pbValueMsg.Proof
+		// senderProof := pbValueMsg.Proof
 
 		// external validity verification
-		if prb.valueVerfiy(senderId, senderSid, senderProposal, senderProof, prb.acs.Config.PublicKey) == false {
-			return
-		}
+		// fmt.Println(senderProposal)
+		// fmt.Println(senderProof)
+		// fmt.Println(prb.acs.Config.PublicKey)
+		// fmt.Println(prb.valueVerfiy)
+		// fmt.Printf("%T", prb.valueVerfiy)
+		// fmt.Println("")
+		// if prb.valueVerfiy(senderId, senderSid, senderProposal, senderProof, prb.acs.Config.PublicKey) == false {
+		// 	return
+		// }
 		
 		marshalData := getMsgdata(senderId, senderSid, senderProposal)
 		documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, prb.acs.Config.PublicKey)
@@ -107,15 +117,22 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		}
 		partSigBytes, _ := json.Marshal(partSig)
 		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, partSigBytes)
-		// reply msg to sender
-		err = prb.acs.Unicast(prb.acs.GetNetworkInfo()[uint32(senderId)], pbEchoMsg)
-		if err != nil {
-			logger.WithField("error", err.Error()).Error("Unicast failed.")
+		if uint32(senderId) != prb.acs.ID{
+			// reply msg to sender
+			err = prb.acs.Unicast(prb.acs.GetNetworkInfo()[uint32(senderId)], pbEchoMsg)
+			if err != nil {
+				logger.WithField("error", err.Error()).Error("Unicast failed.")
+			}
+		} else{
+			// echo self
+			prb.acs.MsgEntrance <- pbEchoMsg
 		}
-		// echo self
-
 		break
 	case *pb.Msg_PbEcho:
+		// logger.WithFields(logrus.Fields{
+		// 	"len(prb.EchoVote):":  len(prb.EchoVote),
+		// 	"complete:": prb.complete,
+		// }).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get pbEcho msg good")
 		if len(prb.EchoVote) >= 2*prb.acs.Config.F+1 {
 			break
 		}
@@ -160,6 +177,15 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 				}).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: create signature failed!")
 				return
 			}
+			// flag, err := go_hotstuff.TVerify(prb.acs.Config.PublicKey, signature, prb.DocumentHash)
+			// if err != nil || flag == false {
+			// 	logger.WithFields(logrus.Fields{
+			// 		"error":        err.Error(),
+			// 		"documentHash": hex.EncodeToString(prb.DocumentHash),
+			// 		"signature": signature,
+			// 	}).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: create error signature!")
+			// 	//return
+			// }
 			prb.complete = true
 			prb.Signature = signature
 			logger.WithFields(logrus.Fields{
@@ -181,6 +207,10 @@ func (prb *ProvableBroadcastImpl) getSignature() tcrsa.Signature {
 		return nil
 	}
 	return prb.Signature
+}
+
+func (prb *ProvableBroadcastImpl) getProposal() []byte {
+	return prb.proposal
 }
 
 func (prb *ProvableBroadcastImpl) getStatus() bool {

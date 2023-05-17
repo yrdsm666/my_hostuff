@@ -90,6 +90,8 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	go acs.receiveTaskSignal(ctx)
 	go acs.receiveMsg(ctx)
 
+	acs.controller("start")
+
 	return acs
 }
 
@@ -114,9 +116,17 @@ func (acs *CommonSubsetImpl) handleMsg(msg *pb.Msg) {
 		// send the request to the leader, if the replica is not the leader
 		break
 	case *pb.Msg_PbValue:
-		acs.proBroadcast.handleProvableBroadcastMsg(msg)
+		if acs.taskPhase == "PB" {
+			acs.proBroadcast.handleProvableBroadcastMsg(msg)
+		} else {
+			acs.mvba.handleSpeedMvbaMsg(msg)
+		}
 	case *pb.Msg_PbEcho:
-		acs.proBroadcast.handleProvableBroadcastMsg(msg)
+		if acs.taskPhase == "PB" {
+			acs.proBroadcast.handleProvableBroadcastMsg(msg)
+		} else {
+			acs.mvba.handleSpeedMvbaMsg(msg)
+		}
 	case *pb.Msg_PbFinal:
 		acs.handlePbFinal(msg)
 	case *pb.Msg_CoinShare:
@@ -149,13 +159,12 @@ func (acs *CommonSubsetImpl) receiveTaskSignal(ctx context.Context) {
 
 func (acs *CommonSubsetImpl) controller(task string) {
 	switch task {
-	case "init":
+	case "start":
 		go acs.startNewInstance()
 	case "getPbValue":
 		if acs.taskPhase == "PB" {
 			acs.broadcastPbFinal()
 		} else if acs.taskPhase == "SPB" {
-			// 注意当第一个PB完成后广播Done消息
 			go acs.mvba.controller(task)
 		}
 	case "getSpbValue":
@@ -166,6 +175,16 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		if acs.taskPhase == "PB" {
 			go acs.mvba.startSpeedMvba(acs.vectors)
 		}
+		// fmt.Println("")
+		// fmt.Println("---------------- [PB_END_1] -----------------")
+		// fmt.Println("replica: ", acs.ID)
+		// for i := 0; i < 2*acs.Config.F+1; i++ {
+		// 	fmt.Println("node: ", acs.vectors[i].id)
+		// 	fmt.Println("Sid: ", acs.vectors[i].sid)
+		// 	fmt.Println("proposalHashLen: ", len(acs.vectors[i].proposal))
+		// }
+		// fmt.Println(" GOOD WORK!.")
+		// fmt.Println("---------------- [PB_END_2] -----------------")
 	case "end":
 		// commit
 		fmt.Println("")
@@ -257,8 +276,8 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 	}
 	marshalData := getMsgdata(senderId, senderSid, senderProposal)
-	documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, acs.Config.PublicKey)
-	flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature, documentHash)
+	// documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, acs.Config.PublicKey)
+	flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature, marshalData)
 	if err != nil || flag == false {
 		logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] [ACS] verfiy signature from PbFinal failed.")
 	}
@@ -301,14 +320,15 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 func (acs *CommonSubsetImpl) broadcastPbFinal() {
 	signature := acs.proBroadcast.getSignature()
 	marshal, _ := json.Marshal(signature)
-	pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.Sid, acs.proposal, marshal)
+	proposal := acs.proBroadcast.getProposal()
+	pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.Sid, proposal, marshal)
 	// broadcast msg
 	err := acs.Broadcast(pbFinalMsg)
 	if err != nil {
 		logger.WithField("error", err.Error()).Error("Broadcast failed.")
 	}
 	// send to self
-
+	acs.MsgEntrance <- pbFinalMsg
 }
 
 func CheckValue(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool {

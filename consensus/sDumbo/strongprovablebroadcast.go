@@ -18,6 +18,7 @@ import (
 	// "os"
 	"strconv"
 	// "sync"
+	// "fmt"
 )
 
 // var logger = logging.GetLogger()
@@ -29,6 +30,8 @@ type StrongProvableBroadcast interface {
 	getSignature2() tcrsa.Signature
 	getProvableBroadcast1Status() bool
 	getProvableBroadcast2Status() bool
+	getProvableBroadcast1() ProvableBroadcast
+	getProvableBroadcast2() ProvableBroadcast
 	// handleStrongProvableBroadcastMsg(msg *pb.Msg)
 }
 
@@ -59,17 +62,35 @@ func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastI
 func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []byte) {
 	logger.Info("[replica_" + strconv.Itoa(int(spb.acs.ID)) + "] [sid_" + strconv.Itoa(spb.acs.Sid) + "] [SPB] Start Strong Provable Broadcast")
 
-	spb.acs.taskPhase = "SPB"
+	spb.acs.taskPhase = "SPB_1"
 	spb.proposal = proposal
 	// spb.Signature1 = tcrsa.SigShare{}
 	// spb.Signature2 = tcrsa.SigShare{}
 	spb.proBroadcast1 = NewProvableBroadcast(spb.acs)
 	spb.proBroadcast2 = NewProvableBroadcast(spb.acs)
+
 	j := []byte("1")
 	newProposal := append(proposal[:], j[0])
 
 	go spb.proBroadcast1.startProvableBroadcast(newProposal, nil, CheckValue)
 }
+
+// func (spb *StrongProvableBroadcastImpl) handleStrongProvableBroadcastMsg(msg *pb.Msg) {
+// 	switch msg.Payload.(type) {
+// 	case *pb.Msg_PbValue:
+// 		if spb.acs.taskPhase == "SPB_1" {
+// 			spb.proBroadcast1.handleProvableBroadcastMsg(msg)
+// 		} else if spb.acs.taskPhase == "SPB_2" {
+// 			spb.proBroadcast2.handleProvableBroadcastMsg(msg)
+// 		}
+// 	case *pb.Msg_PbEcho:
+// 		if spb.acs.taskPhase == "SPB_1" {
+// 			spb.proBroadcast1.handleProvableBroadcastMsg(msg)
+// 		} else if spb.acs.taskPhase == "SPB_2" {
+// 			spb.proBroadcast2.handleProvableBroadcastMsg(msg)
+// 		}
+// 	}
+// }
 
 func (spb *StrongProvableBroadcastImpl) controller(task string) {
 	if task == "getPbValue" {
@@ -79,6 +100,7 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 			marshalData, _ := json.Marshal(signature)
 			j := []byte("2")
 			newProposal := append(spb.proposal[:], j[0])
+			spb.acs.taskPhase = "SPB_2"
 			go spb.proBroadcast2.startProvableBroadcast(newProposal, marshalData, verfiyThld)
 		} else {
 			signature := spb.proBroadcast2.getSignature()
@@ -111,3 +133,12 @@ func (spb *StrongProvableBroadcastImpl) getProvableBroadcast1Status() bool {
 func (spb *StrongProvableBroadcastImpl) getProvableBroadcast2Status() bool {
 	return spb.proBroadcast2.getStatus()
 }
+
+func (spb *StrongProvableBroadcastImpl) getProvableBroadcast1() ProvableBroadcast {
+	return spb.proBroadcast1
+}
+
+func (spb *StrongProvableBroadcastImpl) getProvableBroadcast2() ProvableBroadcast {
+	return spb.proBroadcast2
+}
+

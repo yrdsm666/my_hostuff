@@ -145,6 +145,20 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		return
 	}
 	switch msg.Payload.(type) {
+	case *pb.Msg_PbValue:
+		if mvba.acs.taskPhase == "SPB_1" {
+			mvba.spb.getProvableBroadcast1().handleProvableBroadcastMsg(msg)
+		} else if mvba.acs.taskPhase == "SPB_2" {
+			mvba.spb.getProvableBroadcast2().handleProvableBroadcastMsg(msg)
+		}
+		break
+	case *pb.Msg_PbEcho:
+		if mvba.acs.taskPhase == "SPB_1" {
+			mvba.spb.getProvableBroadcast1().handleProvableBroadcastMsg(msg)
+		} else if mvba.acs.taskPhase == "SPB_2" {
+			mvba.spb.getProvableBroadcast2().handleProvableBroadcastMsg(msg)
+		}
+		break
 	case *pb.Msg_Done:
 		doneMsg := msg.GetDone()
 		senderId := int(doneMsg.Id)
@@ -221,7 +235,16 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 
 		if len(mvba.finalVectors) == 2*mvba.acs.Config.F+1 && mvba.DFlag == 0 {
 			mvba.DFlag = 1
-			mvba.broadcastDone()
+			//mvba.broadcastDone()
+			fmt.Println("---------------- [SPB_END_1] -----------------")
+			fmt.Println("replica: ", mvba.acs.ID)
+			for i := 0; i < 2*mvba.acs.Config.F+1; i++ {
+				fmt.Println("node: ", mvba.finalVectors[i].id)
+				fmt.Println("Sid: ", mvba.finalVectors[i].sid)
+				fmt.Println("proposalHashLen: ", len(mvba.finalVectors[i].proposal))
+			}
+			fmt.Println(" GOOD WORK!.")
+			fmt.Println("---------------- [SPB_END_2] -----------------")
 		}
 		break
 	case *pb.Msg_Halt:
