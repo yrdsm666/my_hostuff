@@ -9,7 +9,6 @@ out
 gen
 /cmd/hotstuffgenkey/hotstuffgenkey
 /cmd/hotstuffclient/hotstuffclient
+/cmd/client/client
 /server/hotstuff
 /server/server
-
-
