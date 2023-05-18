@@ -98,7 +98,8 @@ message PbValue {
 message PbEcho {
   uint64 id = 1;
   uint64 sid = 2;
-  bytes partialSig = 3;
+  bytes proposal = 3;
+  bytes partialSig = 4;
 }
 
 message PbFinal {

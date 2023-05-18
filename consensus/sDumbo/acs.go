@@ -352,5 +352,19 @@ func verfiyThld(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa
 		return false
 	}
 	return true
+}
 
+func getMsgdata(senderId int, senderSid int, sednerProposal []byte) []byte {
+	type msgData struct {
+		Id       int
+		Sid      int
+		Proposal []byte
+	}
+	data := &msgData{
+		Id:       senderId,
+		Sid:      senderSid,
+		Proposal: sednerProposal,
+	}
+	marshal, _ := json.Marshal(data)
+	return marshal
 }

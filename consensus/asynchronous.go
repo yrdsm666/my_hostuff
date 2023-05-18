@@ -136,11 +136,12 @@ func (a *AsynchronousImpl) PbValueMsg(id int, sid int, proposal []byte, proof []
 	return msg
 }
 
-func (a *AsynchronousImpl) PbEchoMsg(id int, sid int, partialSig []byte) *pb.Msg {
+func (a *AsynchronousImpl) PbEchoMsg(id int, sid int, proposal []byte, partialSig []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_PbEcho{PbEcho: &pb.PbEcho{
 		Id: uint64(id),
 		Sid: uint64(sid),
+		Proposal: proposal,
 		PartialSig: partialSig,
 	}}
 	return msg

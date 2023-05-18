@@ -1,7 +1,7 @@
 package sDumbo
 
 import (
-	//"bytes"
+	"bytes"
 	//"context"
 	"encoding/hex"
 	"encoding/json"
@@ -68,7 +68,6 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof 
 	prb.proof = proof
 
 	id := int(prb.acs.ID)
-
 	pbValueMsg := prb.acs.PbValueMsg(id, prb.acs.Sid, prb.proposal, prb.proof)
 
 	// create msg hash
@@ -109,6 +108,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		// 	return
 		// }
 		
+		// Create threshold signature share
 		marshalData := getMsgdata(senderId, senderSid, senderProposal)
 		documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, prb.acs.Config.PublicKey)
 		partSig, err := go_hotstuff.TSign(documentHash, prb.acs.Config.PrivateKey, prb.acs.Config.PublicKey)
@@ -116,9 +116,9 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbValue: create the partial signature failed.")
 		}
 		partSigBytes, _ := json.Marshal(partSig)
-		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, partSigBytes)
+		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, senderProposal, partSigBytes)
 		if uint32(senderId) != prb.acs.ID{
-			// reply msg to sender
+			// reply echo msg to sender
 			err = prb.acs.Unicast(prb.acs.GetNetworkInfo()[uint32(senderId)], pbEchoMsg)
 			if err != nil {
 				logger.WithField("error", err.Error()).Error("Unicast failed.")
@@ -129,10 +129,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		}
 		break
 	case *pb.Msg_PbEcho:
-		// logger.WithFields(logrus.Fields{
-		// 	"len(prb.EchoVote):":  len(prb.EchoVote),
-		// 	"complete:": prb.complete,
-		// }).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get pbEcho msg good")
+		// Ignore messages when echo is enough
 		if len(prb.EchoVote) >= 2*prb.acs.Config.F+1 {
 			break
 		}
@@ -146,17 +143,25 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get mismatch sid PbEcho msg")
 			break
 		}
+		// Ignore messagemessages from other provable broadcast instance
+		senderProposal := pbEchoMsg.Proposal
+		if bytes.Compare(senderProposal, prb.proposal) != 0 {
+			logger.Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get misPbValue msg")
+			return
+		}
 		logger.WithFields(logrus.Fields{
 			"senderId":  int(pbEchoMsg.Id),
 			"senderSid": senderSid,
 		}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get pbEcho msg")
-
+		
+		// get the partSig form message
 		partSig := &tcrsa.SigShare{}
 		err := json.Unmarshal(pbEchoMsg.PartialSig, partSig)
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
 		}
 
+		// Verify the partSig form message
 		err = go_hotstuff.VerifyPartSig(partSig, prb.DocumentHash, prb.acs.Config.PublicKey)
 		if err != nil {
 			logger.WithFields(logrus.Fields{
@@ -168,6 +173,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 
 		prb.EchoVote = append(prb.EchoVote, partSig)
 
+		// Create full threshold signature when echo is enough
 		if len(prb.EchoVote) == 2*prb.acs.Config.F+1 {
 			signature, err := go_hotstuff.CreateFullSignature(prb.DocumentHash, prb.EchoVote, prb.acs.Config.PublicKey)
 			if err != nil {
@@ -186,14 +192,14 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			// 	}).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: create error signature!")
 			// 	//return
 			// }
-			prb.complete = true
 			prb.Signature = signature
+			prb.complete = true
+			prb.acs.taskSignal <- "getPbValue"
 			logger.WithFields(logrus.Fields{
 				"signature":    len(signature),
 				"documentHash": len(prb.DocumentHash),
 				"echoVote":     len(prb.EchoVote),
 			}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: create signature")
-			prb.acs.taskSignal <- "getPbValue"
 		}
 		break
 	default:
@@ -217,17 +223,3 @@ func (prb *ProvableBroadcastImpl) getStatus() bool {
 	return prb.complete
 }
 
-func getMsgdata(senderId int, senderSid int, sednerProposal []byte) []byte {
-	type msgData struct {
-		Id       int
-		Sid      int
-		Proposal []byte
-	}
-	data := &msgData{
-		Id:       senderId,
-		Sid:      senderSid,
-		Proposal: sednerProposal,
-	}
-	marshal, _ := json.Marshal(data)
-	return marshal
-}
