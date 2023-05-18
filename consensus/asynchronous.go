@@ -23,7 +23,7 @@ type Asynchronous interface {
 	SafeExit()
 
 	PbValueMsg(id int, sid int, proposal []byte, proof []byte) *pb.Msg
-	PbEchoMsg(id int, sid int, partialSig []byte) *pb.Msg
+	PbEchoMsg(id int, sid int, proposal []byte, partialSig []byte) *pb.Msg
 	PbFinalMsg(id int, sid int, proposal []byte, signature []byte) *pb.Msg
 	CoinShareMsg(id int, sid int, sigShare []byte) *pb.Msg
 	SpbFinalMsg(id int, sid int, proposal []byte, signature []byte) *pb.Msg
