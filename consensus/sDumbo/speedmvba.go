@@ -101,7 +101,8 @@ func (mvba *SpeedMvbaImpl) controller(task string) {
 		if mvba.spb.getProvableBroadcast2Status() == true {
 			// mvba.spb.controller(task)
 			signature := mvba.spb.getSignature2()
-			spbFinalMsg := mvba.acs.SpbFinalMsg(int(mvba.acs.ID), mvba.acs.Sid, mvba.proposal, signature)
+			marshalData, _ := json.Marshal(signature)
+			spbFinalMsg := mvba.acs.SpbFinalMsg(int(mvba.acs.ID), mvba.acs.Sid, mvba.proposal, marshalData)
 			// broadcast msg
 			err := mvba.acs.Broadcast(spbFinalMsg)
 			if err != nil {
@@ -174,7 +175,7 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 		}
 
-		flag, err := verfiySpbSig(senderId, senderSid, "1", senderProposal, *signature, mvba.acs.Config.PublicKey)
+		flag, err := verfiySpbSig(senderId, senderSid, []byte{1}, senderProposal, *signature, mvba.acs.Config.PublicKey)
 		if err != nil || flag == false {
 			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] done: verfiy signature failed.")
 			return
@@ -219,7 +220,7 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 		}
 
-		flag, err := verfiySpbSig(senderId, senderSid, "2", senderProposal, *signature, mvba.acs.Config.PublicKey)
+		flag, err := verfiySpbSig(senderId, senderSid, []byte{2}, senderProposal, *signature, mvba.acs.Config.PublicKey)
 		if err != nil || flag == false {
 			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] spbFinal: verfiy signature failed.")
 			return
@@ -267,7 +268,7 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		fProposal := finalVector.proposal
 		fsignature := finalVector.Signature
 
-		flag, err := verfiySpbSig(fId, fSid, "2", fProposal, fsignature, mvba.acs.Config.PublicKey)
+		flag, err := verfiySpbSig(fId, fSid, []byte{2}, fProposal, fsignature, mvba.acs.Config.PublicKey)
 		if err != nil || flag == false {
 			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] verfiy signature failed.")
 			return
@@ -303,7 +304,7 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 				logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 			}
 	
-			flag, err := verfiySpbSig(mvba.leader, senderSid, "1", senderProposal, *signature, mvba.acs.Config.PublicKey)
+			flag, err := verfiySpbSig(mvba.leader, senderSid, []byte{1}, senderProposal, *signature, mvba.acs.Config.PublicKey)
 			if err != nil || flag == false {
 				logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] preVote: verfiy signature failed.")
 				return
@@ -374,7 +375,7 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 
 		var documentHash []byte
 		if flag == 1 {
-			res, err := verfiySpbSig(mvba.leader, senderSid, "1", leaderProposal, *signature, mvba.acs.Config.PublicKey)
+			res, err := verfiySpbSig(mvba.leader, senderSid, []byte{1}, leaderProposal, *signature, mvba.acs.Config.PublicKey)
 			if err != nil || res == false {
 				logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] vote: verfiy signature failed.")
 				return
@@ -573,9 +574,9 @@ func BytesToInt(bys []byte) int {
 	return int(data)
 }
 
-func verfiySpbSig(id int, sid int, j string, proposal []byte, signature tcrsa.Signature, publicKey *tcrsa.KeyMeta) (bool, error) {
-	jBytes := []byte(j)
-	newProposal := append(proposal[:], jBytes[0])
+func verfiySpbSig(id int, sid int, jBytes []byte, proposal []byte, signature tcrsa.Signature, publicKey *tcrsa.KeyMeta) (bool, error) {
+	//jBytes := []byte{j}
+	newProposal := append(proposal[:], jBytes...)
 	marshalData := getMsgdata(id, sid, newProposal)
 
 	flag, err := go_hotstuff.TVerify(publicKey, signature, marshalData)

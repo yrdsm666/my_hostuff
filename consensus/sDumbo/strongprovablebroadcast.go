@@ -62,17 +62,17 @@ func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastI
 func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []byte) {
 	logger.Info("[replica_" + strconv.Itoa(int(spb.acs.ID)) + "] [sid_" + strconv.Itoa(spb.acs.Sid) + "] [SPB] Start Strong Provable Broadcast")
 
-	spb.acs.taskPhase = "SPB_1"
 	spb.proposal = proposal
 	// spb.Signature1 = tcrsa.SigShare{}
 	// spb.Signature2 = tcrsa.SigShare{}
 	spb.proBroadcast1 = NewProvableBroadcast(spb.acs)
 	spb.proBroadcast2 = NewProvableBroadcast(spb.acs)
 
-	j := []byte("1")
-	newProposal := append(proposal[:], j[0])
+	j := []byte{1}
+	newProposal := append(proposal[:], j...)
 
-	go spb.proBroadcast1.startProvableBroadcast(newProposal, nil, CheckValue)
+	spb.acs.taskPhase = "SPB_1"
+	go spb.proBroadcast1.startProvableBroadcast(newProposal, nil, "1", CheckValue)
 }
 
 // func (spb *StrongProvableBroadcastImpl) handleStrongProvableBroadcastMsg(msg *pb.Msg) {
@@ -98,10 +98,10 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 			signature := spb.proBroadcast1.getSignature()
 			spb.Signature1 = signature
 			marshalData, _ := json.Marshal(signature)
-			j := []byte("2")
-			newProposal := append(spb.proposal[:], j[0])
+			j := []byte{2}
+			newProposal := append(spb.proposal[:], j...)
 			spb.acs.taskPhase = "SPB_2"
-			go spb.proBroadcast2.startProvableBroadcast(newProposal, marshalData, verfiyThld)
+			go spb.proBroadcast2.startProvableBroadcast(newProposal, marshalData, "2", verfiyThld)
 		} else {
 			signature := spb.proBroadcast2.getSignature()
 			spb.Signature2 = signature

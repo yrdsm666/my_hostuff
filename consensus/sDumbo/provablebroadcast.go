@@ -26,7 +26,7 @@ import (
 //var logger = logging.GetLogger()
 
 type ProvableBroadcast interface {
-	startProvableBroadcast(proposal []byte, proof []byte, verfiyMethod func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool)
+	startProvableBroadcast(proposal []byte, proof []byte, j string, verfiyMethod func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool)
 	handleProvableBroadcastMsg(msg *pb.Msg)
 	getSignature() tcrsa.Signature
 	getProposal() []byte
@@ -56,8 +56,8 @@ func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 	return prb
 }
 
-func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof []byte, valueValidation func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool) {
-	logger.Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Start Provable Broadcast")
+func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof []byte, j string, valueValidation func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool) {
+	logger.Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Start Provable Broadcast " + j)
 
 	prb.EchoVote = make([]*tcrsa.SigShare, 0)
 	prb.valueVerfiy = valueValidation
