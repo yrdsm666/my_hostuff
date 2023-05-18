@@ -158,15 +158,16 @@ func (acs *CommonSubsetImpl) receiveTaskSignal(ctx context.Context) {
 }
 
 func (acs *CommonSubsetImpl) controller(task string) {
+	//fmt.Println("start "+task+" end")
 	switch task {
 	case "start":
 		go acs.startNewInstance()
-	case "getPbValue":
-		if acs.taskPhase == "PB" {
-			acs.broadcastPbFinal()
-		} else {
-			go acs.mvba.controller(task)
-		}
+	case "getPbValue_acs":
+		acs.broadcastPbFinal()
+	case "getPbValue_1":
+		go acs.mvba.controller(task)
+	case "getPbValue_2":
+		go acs.mvba.controller(task)
 	case "getSpbValue":
 		go acs.mvba.controller(task)
 	case "getCoin":
@@ -250,7 +251,7 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 	proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
 	acs.proposalHash = proposalHash
 	acs.taskPhase = "PB"
-	go acs.proBroadcast.startProvableBroadcast(proposalHash, nil, "", CheckValue)
+	go acs.proBroadcast.startProvableBroadcast(proposalHash, nil, "acs", CheckValue)
 }
 
 func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {

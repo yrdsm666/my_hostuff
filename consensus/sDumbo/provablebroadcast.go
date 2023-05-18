@@ -41,6 +41,7 @@ type ProvableBroadcastImpl struct {
 	proof       []byte
 	valueVerfiy func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool
 	complete    bool
+	invoker     string // who invoke the PB
 	// vectors       []MvbaInputVector
 	// futureVectors []MvbaInputVector
 	EchoVote     []*tcrsa.SigShare
@@ -59,6 +60,7 @@ func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof []byte, j string, valueValidation func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool) {
 	logger.Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Start Provable Broadcast " + j)
 
+	prb.invoker = j
 	prb.EchoVote = make([]*tcrsa.SigShare, 0)
 	prb.valueVerfiy = valueValidation
 	// fmt.Println("valueValidation:")
@@ -115,6 +117,20 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbValue: create the partial signature failed.")
 		}
+
+		// Verify the partSig form message
+		err = go_hotstuff.VerifyPartSig(partSig, prb.DocumentHash, prb.acs.Config.PublicKey)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"error":        err.Error(),
+				"documentHash1": hex.EncodeToString(prb.DocumentHash),
+				"documentHash2": hex.EncodeToString(documentHash),
+				// "proposal": hex.EncodeToString(prb.proposal),
+				// "senderProposalHash": hex.EncodeToString(senderProposal),
+			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] ???: signature share not verified!")
+			return
+		}
+
 		partSigBytes, _ := json.Marshal(partSig)
 		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, senderProposal, partSigBytes)
 		if uint32(senderId) != prb.acs.ID{
@@ -146,7 +162,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		// Ignore messagemessages from other provable broadcast instance
 		senderProposal := pbEchoMsg.Proposal
 		if bytes.Compare(senderProposal, prb.proposal) != 0 {
-			logger.Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get misPbValue msg")
+			logger.Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get mismatch proposal PbEcho msg")
 			return
 		}
 		logger.WithFields(logrus.Fields{
@@ -167,7 +183,9 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			logger.WithFields(logrus.Fields{
 				"error":        err.Error(),
 				"documentHash": hex.EncodeToString(prb.DocumentHash),
-			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: signature not verified!")
+				// "proposal": hex.EncodeToString(prb.proposal),
+				// "senderProposalHash": hex.EncodeToString(senderProposal),
+			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: signature share not verified!")
 			return
 		}
 
@@ -194,7 +212,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			// }
 			prb.Signature = signature
 			prb.complete = true
-			prb.acs.taskSignal <- "getPbValue"
+			prb.acs.taskSignal <- "getPbValue_" + prb.invoker
 			logger.WithFields(logrus.Fields{
 				"signature":    len(signature),
 				"documentHash": len(prb.DocumentHash),

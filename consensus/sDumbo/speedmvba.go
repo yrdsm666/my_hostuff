@@ -95,7 +95,9 @@ func (mvba *SpeedMvbaImpl) startSpeedMvba(vectors []Vector) {
 
 func (mvba *SpeedMvbaImpl) controller(task string) {
 	switch task {
-	case "getPbValue":
+	case "getPbValue_1":
+		mvba.spb.controller(task)
+	case "getPbValue_2":
 		mvba.spb.controller(task)
 	case "getSpbValue":
 		if mvba.spb.getProvableBroadcast2Status() == true {
@@ -108,6 +110,8 @@ func (mvba *SpeedMvbaImpl) controller(task string) {
 			if err != nil {
 				logger.WithField("error", err.Error()).Error("Broadcast failed.")
 			}
+			// vote self
+			mvba.acs.MsgEntrance <- spbFinalMsg
 		}else{
 			logger.Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Strong Provable Broadcast is not complet")
 		}
@@ -120,6 +124,7 @@ func (mvba *SpeedMvbaImpl) controller(task string) {
 		marshalData, _ := json.Marshal(signature)
 		signatureHash, _ := go_hotstuff.CreateDocumentHash(marshalData, mvba.acs.Config.PublicKey)
 		mvba.leader = BytesToInt(signatureHash)%mvba.acs.Config.N + 1
+		logger.Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] get the leader: " + strconv.Itoa(mvba.leader))
 		mvba.waitleader.Broadcast()
 		for _, vector := range mvba.finalVectors {
 			if vector.id == mvba.leader {
