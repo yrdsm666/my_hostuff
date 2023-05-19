@@ -123,9 +123,11 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 				logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
 			}
 			// verify the proof
-			flag, err := verfiySpbSig(senderId, senderSid, []byte("SPB_1"), senderProposal, *proof, prb.acs.Config.PublicKey)
+			newProposal := bytesAdd(bytesSub(senderProposal, []byte("SPB_2")), []byte("SPB_1"))
+			marshalData := getMsgdata(senderId, senderSid, newProposal)
+			flag, err := go_hotstuff.TVerify(prb.acs.Config.PublicKey, *proof, marshalData)
 			if err != nil || flag == false {
-				logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(int(prb.acs.Sid)) + "] [PB] pbValue: verfiy signature failed in PB_2 for external validity.")
+				logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(int(prb.acs.Sid)) + "] [PB] pbValue: verfiy proof of SPB_1 failed in SPB_2.")
 				return
 			}
 			lockVector := Vector{

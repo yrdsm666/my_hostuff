@@ -617,3 +617,19 @@ func verfiySpbSig(id int, sid int, jBytes []byte, proposal []byte, signature tcr
 	return true, nil
 
 }
+
+// return proposal + jBytes
+func bytesAdd(proposal []byte, jBytes []byte) []byte {
+	newProposal := make([]byte, 0)
+	newProposal = append(newProposal, proposal...)
+	newProposal = append(newProposal, jBytes...)
+	return newProposal
+}
+
+// return proposal - jBytes
+func bytesSub(proposal []byte, jBytes []byte) []byte {
+	newProposal := make([]byte, 0)
+	newProposal = append(newProposal, proposal...)
+	newProposal = newProposal[:len(newProposal) - len(jBytes)]
+	return newProposal
+}
