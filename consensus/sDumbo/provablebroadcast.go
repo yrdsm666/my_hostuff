@@ -20,7 +20,7 @@ import (
 	//"os"
 	"strconv"
 	//"sync"
-	"fmt"
+	// "fmt"
 )
 
 //var logger = logging.GetLogger()
@@ -47,6 +47,7 @@ type ProvableBroadcastImpl struct {
 	EchoVote     []*tcrsa.SigShare
 	DocumentHash []byte
 	Signature    tcrsa.Signature
+	partSig      tcrsa.SigShare
 }
 
 func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
@@ -84,6 +85,8 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof 
 
 	// vote self
 	prb.acs.MsgEntrance <- pbValueMsg
+
+	// prb.partSig = &tcrsa.SigShare{[]byte{1},[]byte{1},[]byte{1},10}
 }
 
 func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
@@ -118,34 +121,42 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbValue: create the partial signature failed.")
 		}
 
-		// Verify the partSig form message
-		if senderId == int(prb.acs.ID){
-			//fmt.Println("partSig1:")
-			//fmt.Println(partSig)
-			err = go_hotstuff.VerifyPartSig(partSig, prb.DocumentHash, prb.acs.Config.PublicKey)
-			if err != nil {
-				data := getMsgdata(int(prb.acs.ID), prb.acs.Sid, prb.proposal)
-				fmt.Println("compare")
-				fmt.Println(bytes.Compare(senderProposal, prb.proposal))
-				fmt.Println(bytes.Compare(marshalData, data))
-				fmt.Println("data")
-				fmt.Println(int(prb.acs.ID))
-				fmt.Println(prb.acs.Sid)
-				fmt.Println(senderId)
-				fmt.Println(senderSid)
+		// // Verify the partSig form message
+		// if senderId == int(prb.acs.ID){
+		// 	//fmt.Println("partSig1:")
+		// 	//fmt.Println(partSig)
+		// 	prb.partSig = *partSig
+		// 	logger.WithFields(logrus.Fields{
+		// 		"invoker": prb.invoker,
+		// 		"prb.partSig.Xi": hex.EncodeToString(prb.partSig.Xi),
+		// 		"prb.partSig.C": hex.EncodeToString(prb.partSig.C),
+		// 		"prb.partSig.Z": hex.EncodeToString(prb.partSig.Z),
+		// 		"prb.partSig.Id": prb.partSig.Id,
+		// 	}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbValue: partSig save.")
+		// 	err = go_hotstuff.VerifyPartSig(partSig, prb.DocumentHash, prb.acs.Config.PublicKey)
+		// 	if err != nil {
+		// 		data := getMsgdata(int(prb.acs.ID), prb.acs.Sid, prb.proposal)
+		// 		fmt.Println("compare")
+		// 		fmt.Println(bytes.Compare(senderProposal, prb.proposal))
+		// 		fmt.Println(bytes.Compare(marshalData, data))
+		// 		fmt.Println("data")
+		// 		fmt.Println(int(prb.acs.ID))
+		// 		fmt.Println(prb.acs.Sid)
+		// 		fmt.Println(senderId)
+		// 		fmt.Println(senderSid)
 
-				logger.WithFields(logrus.Fields{
-					"error":        err.Error(),
-					"documentHash1": hex.EncodeToString(prb.DocumentHash),
-					"documentHash2": hex.EncodeToString(documentHash),
-					"senderId":  senderId,
-					"senderSid": senderSid,
-					// "proposal": hex.EncodeToString(prb.proposal),
-					// "senderProposalHash": hex.EncodeToString(senderProposal),
-				}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] ???: signature share not verified!")
-				return
-			}
-		}
+		// 		logger.WithFields(logrus.Fields{
+		// 			"error":        err.Error(),
+		// 			"documentHash1": hex.EncodeToString(prb.DocumentHash),
+		// 			"documentHash2": hex.EncodeToString(documentHash),
+		// 			"senderId":  senderId,
+		// 			"senderSid": senderSid,
+		// 			// "proposal": hex.EncodeToString(prb.proposal),
+		// 			// "senderProposalHash": hex.EncodeToString(senderProposal),
+		// 		}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] ???: signature share not verified!")
+		// 		return
+		// 	}
+		// }
 		
 
 		partSigBytes, _ := json.Marshal(partSig)
@@ -197,15 +208,34 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		// Verify the partSig form message
 		err = go_hotstuff.VerifyPartSig(partSig, prb.DocumentHash, prb.acs.Config.PublicKey)
 		if err != nil {
-			marshalData := getMsgdata(int(pbEchoMsg.Id), senderSid, senderProposal)
-			documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, prb.acs.Config.PublicKey)
-			// fmt.Println("partSig2:")
-			// fmt.Println(partSig)
+			// marshalData := getMsgdata(int(pbEchoMsg.Id), senderSid, senderProposal)
+			// documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, prb.acs.Config.PublicKey)
+			// fmt.Println("partSig_Xi:")
+			// fmt.Println("partSig_Xi:")
+			// fmt.Println(prb.partSig)
+			// // fmt.Println(hex.EncodeToString(partSig.Xi))
+			// // fmt.Println(hex.EncodeToString(prb.partSig.Xi))
+			// // fmt.Println("partSig_C:")
+			// // fmt.Println(hex.EncodeToString(partSig.C))
+			// // fmt.Println(hex.EncodeToString(prb.partSig.C))
+			// // fmt.Println("partSig_Z:")
+			// // fmt.Println(hex.EncodeToString(partSig.Z))
+			// // fmt.Println(hex.EncodeToString(prb.partSig.Z))
+			// // fmt.Println("partSig_Id:")
+			// // fmt.Println(partSig.Id)
+			// // fmt.Println(prb.partSig.Id)
+			// cc := *partSig
 			logger.WithFields(logrus.Fields{
-				"error":        err.Error(),
-				"compare": bytes.Compare(prb.DocumentHash, documentHash),
-				"mydocumentHash": hex.EncodeToString(prb.DocumentHash),
-				"msgdocumentHash": hex.EncodeToString(documentHash),
+				// "error":        err.Error(),
+				// "invoker": prb.invoker,
+				// // "Sigcompare": *partSig == prb.partSig,
+				// "Sigcompare_Xi": bytes.Compare(cc.Xi, prb.partSig.Xi),
+				// "Sigcompare_C": bytes.Compare(cc.C, prb.partSig.C),
+				// "Sigcompare_Z": bytes.Compare(cc.Z, prb.partSig.Z),
+				// "Sigcompare_Id": cc.Id == prb.partSig.Id,
+				// "compare": bytes.Compare(prb.DocumentHash, documentHash),
+				// "mydocumentHash": hex.EncodeToString(prb.DocumentHash),
+				// "msgdocumentHash": hex.EncodeToString(documentHash),
 				"senderId":  int(pbEchoMsg.Id),
 				"senderSid": senderSid,
 				// "proposal": hex.EncodeToString(prb.proposal),
