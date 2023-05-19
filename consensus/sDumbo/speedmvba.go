@@ -118,10 +118,12 @@ func (mvba *SpeedMvbaImpl) controller(task string) {
 		}else{
 			logger.Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Strong Provable Broadcast is not complet")
 		}
-	case "doneFinal":
+	case "spbFinal":
 		strId := fmt.Sprintf("%d", mvba.acs.ID)
 		strSid := fmt.Sprintf("%d", mvba.acs.Sid)
 		go mvba.cc.startCommonCoin("coin" + strId + strSid)
+	case "spbEnd":
+		mvba.spb.controller(task)
 	case "getCoin":
 		signature := mvba.cc.getCoin()
 		marshalData, _ := json.Marshal(signature)
@@ -129,23 +131,24 @@ func (mvba *SpeedMvbaImpl) controller(task string) {
 		mvba.leader = BytesToInt(signatureHash)%mvba.acs.Config.N + 1
 		logger.Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] get the leader: " + strconv.Itoa(mvba.leader))
 		mvba.waitleader.Broadcast()
-		// for _, vector := range mvba.finalVectors {
-		// 	if vector.id == mvba.leader {
-		// 		mvba.broadcastHalt(vector)
-		// 		mvba.complete = true
-		// 		mvba.leaderVector = vector
-		// 		mvba.acs.taskSignal <- "end"
-		// 		return
-		// 	}
-		// }
-		// mvba.Ready = 1
-		// for _, vector := range mvba.doneVectors {
-		// 	if vector.id == mvba.leader {
-		// 		mvba.broadcastPreVote(1, vector)
-		// 		return
-		// 	}
-		// }
-		// mvba.broadcastPreVote(0, Vector{})
+		for _, vector := range mvba.finalVectors {
+			if vector.id == mvba.leader {
+				mvba.broadcastHalt(vector)
+				mvba.complete = true
+				mvba.leaderVector = vector
+				mvba.acs.taskSignal <- "end"
+				return
+			}
+		}
+		mvba.Ready = 1
+		lockVectors := mvba.spb.getProvableBroadcast2().getLockVectors()
+		for _, vector := range lockVectors {
+			if vector.id == mvba.leader {
+				mvba.broadcastPreVote(1, vector)
+				return
+			}
+		}
+		mvba.broadcastPreVote(0, Vector{})
 	}
 }
 
@@ -176,24 +179,24 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 			"senderId":  senderId,
 			"senderSid": senderSid,
 		}).Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Get Done msg")
-		senderProposal := doneMsg.Proposal
-		signature := &tcrsa.Signature{}
-		err := json.Unmarshal(doneMsg.Signature, signature)
-		if err != nil {
-			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
-		}
+		// senderProposal := doneMsg.Proposal
+		// signature := &tcrsa.Signature{}
+		// err := json.Unmarshal(doneMsg.Signature, signature)
+		// if err != nil {
+		// 	logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
+		// }
 
-		flag, err := verfiySpbSig(senderId, senderSid, []byte("SPB_1"), senderProposal, *signature, mvba.acs.Config.PublicKey)
-		if err != nil || flag == false {
-			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] done: verfiy signature failed.")
-			return
-		}
+		// flag, err := verfiySpbSig(senderId, senderSid, []byte("SPB_1"), senderProposal, *signature, mvba.acs.Config.PublicKey)
+		// if err != nil || flag == false {
+		// 	logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] done: verfiy signature failed.")
+		// 	return
+		// }
 
 		dVector := Vector{
 			id:        senderId,
 			sid:       senderSid,
-			proposal:  senderProposal,
-			Signature: *signature,
+			// proposal:  senderProposal,
+			// Signature: *signature,
 		}
 		mvba.doneVectors = append(mvba.doneVectors, dVector)
 		if len(mvba.doneVectors) == mvba.acs.Config.F+1 && mvba.DFlag == 0 {
@@ -201,8 +204,10 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 			mvba.broadcastDone()
 		}
 		if len(mvba.doneVectors) == 2*mvba.acs.Config.F+1 {
-			// start Common coin
-			mvba.controller("doneFinal")
+			// end the spb
+			// mvba.controller("doneFinal")
+			mvba.controller("spbFinal")
+			mvba.controller("spbEnd")
 		}
 		break
 	case *pb.Msg_SpbFinal:
@@ -245,6 +250,8 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		if len(mvba.finalVectors) == 2*mvba.acs.Config.F+1 && mvba.DFlag == 0 {
 			mvba.DFlag = 1
 			mvba.broadcastDone()
+			// start common coin
+			mvba.controller("spbFinal")
 			// fmt.Println("---------------- [SPB_END_1] -----------------")
 			// fmt.Println("replica: ", mvba.acs.ID)
 			// for i := 0; i < 2*mvba.acs.Config.F+1; i++ {
@@ -395,8 +402,12 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 				return
 			}
 
-			j := []byte("2")
-			newProposal := append(leaderProposal[:], j[0])
+			newProposal := make([]byte, 0)
+			newProposal = append(newProposal, leaderProposal...)
+			jBytes := []byte("SPB_2")
+			newProposal = append(newProposal, jBytes...)
+			// j := []byte("SPB_2")
+			// newProposal := append(leaderProposal[:], j[0])
 			marshalData := getMsgdata(mvba.leader, mvba.acs.Sid, newProposal)
 			documentHash, _ = go_hotstuff.CreateDocumentHash(marshalData, mvba.acs.Config.PublicKey)
 			err = go_hotstuff.VerifyPartSig(partSig, documentHash, mvba.acs.Config.PublicKey)
@@ -483,9 +494,7 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 }
 
 func (mvba *SpeedMvbaImpl) broadcastDone() {
-	signature := mvba.spb.getSignature1()
-	signatureBytes, _ := json.Marshal(signature)
-	doneMsg := mvba.acs.DoneMsg(int(mvba.acs.ID), mvba.acs.Sid, mvba.proposal, signatureBytes)
+	doneMsg := mvba.acs.DoneMsg(int(mvba.acs.ID), mvba.acs.Sid)
 	// broadcast msg
 	err := mvba.acs.Broadcast(doneMsg)
 	if err != nil {
@@ -548,8 +557,12 @@ func (mvba *SpeedMvbaImpl) broadcastVote(flag int, proposal []byte, signature tc
 		partSigBytes, _ := json.Marshal(partSig)
 		voteMsg = mvba.acs.VoteMsg(int(mvba.acs.ID), mvba.acs.Sid, mvba.leader, flag, nil, signatureBytes, partSigBytes)
 	}else{
-		j := []byte("2")
-		newProposal := append(proposal[:], j[0])
+		// j := []byte("2")
+		// newProposal := append(proposal[:], j[0])
+		newProposal := make([]byte, 0)
+		newProposal = append(newProposal, proposal...)
+		jBytes := []byte("SPB_2")
+		newProposal = append(newProposal, jBytes...)
 		marshalData := getMsgdata(mvba.leader, mvba.acs.Sid, newProposal)
 		documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, mvba.acs.Config.PublicKey)
 		partSig, err := go_hotstuff.TSign(documentHash, mvba.acs.Config.PrivateKey, mvba.acs.Config.PublicKey)

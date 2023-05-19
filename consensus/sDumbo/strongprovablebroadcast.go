@@ -40,7 +40,7 @@ type StrongProvableBroadcastImpl struct {
 	acs *CommonSubsetImpl
 
 	proposal []byte
-	// complete      bool
+	complete      bool
 	proBroadcast1 ProvableBroadcast
 	proBroadcast2 ProvableBroadcast
 	// EchoVote      []*tcrsa.SigShare
@@ -54,7 +54,7 @@ type StrongProvableBroadcastImpl struct {
 func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastImpl {
 	spb := &StrongProvableBroadcastImpl{
 		acs: acs,
-		// complete:        false,
+		complete:        false,
 	}
 	return spb
 }
@@ -97,6 +97,9 @@ func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []
 // }
 
 func (spb *StrongProvableBroadcastImpl) controller(task string) {
+	if spb.complete == true{
+		return
+	}
 	if task == "getPbValue_1" {
 		signature := spb.proBroadcast1.getSignature()
 		spb.Signature1 = signature
@@ -114,7 +117,11 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 	if task == "getPbValue_2" {
 		signature := spb.proBroadcast2.getSignature()
 		spb.Signature2 = signature
+		spb.complete = true
 		spb.acs.taskSignal <- "getSpbValue"
+	}
+	if task == "spbEnd" {
+		spb.complete = true
 	}
 }
 

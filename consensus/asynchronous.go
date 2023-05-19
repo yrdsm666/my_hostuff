@@ -22,12 +22,12 @@ type Asynchronous interface {
 	GetSelfInfo() *config.ReplicaInfo
 	SafeExit()
 
-	PbValueMsg(id int, sid int, proposal []byte, proof []byte) *pb.Msg
-	PbEchoMsg(id int, sid int, proposal []byte, partialSig []byte) *pb.Msg
+	PbValueMsg(id int, sid int, invokePhase string, proposal []byte, proof []byte) *pb.Msg
+	PbEchoMsg(id int, sid int, invokePhase string, proposal []byte, partialSig []byte) *pb.Msg
 	PbFinalMsg(id int, sid int, proposal []byte, signature []byte) *pb.Msg
 	CoinShareMsg(id int, sid int, sigShare []byte) *pb.Msg
 	SpbFinalMsg(id int, sid int, proposal []byte, signature []byte) *pb.Msg
-	DoneMsg(id int, sid int, proposal []byte, signature []byte) *pb.Msg
+	DoneMsg(id int, sid int) *pb.Msg
 	HaltMsg(id int, sid int, final []byte) *pb.Msg
 	PreVoteMsg(id int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg
 	VoteMsg(id int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg
@@ -125,22 +125,24 @@ func (a *AsynchronousImpl) Unicast(address string, msg *pb.Msg) error {
 	return nil
 }
 
-func (a *AsynchronousImpl) PbValueMsg(id int, sid int, proposal []byte, proof []byte) *pb.Msg {
+func (a *AsynchronousImpl) PbValueMsg(id int, sid int, invokePhase string, proposal []byte, proof []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_PbValue{PbValue: &pb.PbValue{
 		Id: uint64(id),
 		Sid: uint64(sid),
+		InvokePhase: invokePhase,
 		Proposal: proposal,
 		Proof: proof,
 	}}
 	return msg
 }
 
-func (a *AsynchronousImpl) PbEchoMsg(id int, sid int, proposal []byte, partialSig []byte) *pb.Msg {
+func (a *AsynchronousImpl) PbEchoMsg(id int, sid int, invokePhase string, proposal []byte, partialSig []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_PbEcho{PbEcho: &pb.PbEcho{
 		Id: uint64(id),
 		Sid: uint64(sid),
+		InvokePhase: invokePhase,
 		Proposal: proposal,
 		PartialSig: partialSig,
 	}}
@@ -179,13 +181,11 @@ func (a *AsynchronousImpl) SpbFinalMsg(id int, sid int, proposal []byte, signatu
 	return msg
 }
 
-func (a *AsynchronousImpl) DoneMsg(id int, sid int, proposal []byte, signature []byte) *pb.Msg {
+func (a *AsynchronousImpl) DoneMsg(id int, sid int) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_Done{Done: &pb.Done{
 		Id: uint64(id),
 		Sid: uint64(sid),
-		Proposal: proposal,
-		Signature: signature,
 	}}
 	return msg
 }

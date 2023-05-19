@@ -31,6 +31,7 @@ type ProvableBroadcast interface {
 	getSignature() tcrsa.Signature
 	getProposal() []byte
 	getStatus() bool
+	getLockVectors() []Vector
 }
 
 type ProvableBroadcastImpl struct {
@@ -41,10 +42,11 @@ type ProvableBroadcastImpl struct {
 	proof       []byte
 	valueVerfiy func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool
 	complete    bool
-	invoker     string // who invoke the PB
+	invokePhase string // which phase invoke the PB
 	// vectors       []MvbaInputVector
 	// futureVectors []MvbaInputVector
 	EchoVote     []*tcrsa.SigShare
+	lockVectors  []Vector
 	DocumentHash []byte
 	Signature    tcrsa.Signature
 }
@@ -57,11 +59,12 @@ func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 	return prb
 }
 
-func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof []byte, j string, valueValidation func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool) {
-	logger.Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Start Provable Broadcast " + j)
+func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof []byte, invokePhase string, valueValidation func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool) {
+	logger.Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Start Provable Broadcast " + invokePhase)
 
-	prb.invoker = j
+	prb.invokePhase = invokePhase
 	prb.EchoVote = make([]*tcrsa.SigShare, 0)
+	prb.lockVectors = make([]Vector, 0)
 	prb.valueVerfiy = valueValidation
 	// fmt.Println("valueValidation:")
 	// fmt.Println(valueValidation)
@@ -70,7 +73,7 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof 
 	prb.proof = proof
 
 	id := int(prb.acs.ID)
-	pbValueMsg := prb.acs.PbValueMsg(id, prb.acs.Sid, prb.proposal, prb.proof)
+	pbValueMsg := prb.acs.PbValueMsg(id, prb.acs.Sid, invokePhase, prb.proposal, prb.proof)
 
 	// create msg hash
 	data := getMsgdata(id, prb.acs.Sid, prb.proposal)
@@ -92,6 +95,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		pbValueMsg := msg.GetPbValue()
 		senderId := int(pbValueMsg.Id)
 		senderSid := int(pbValueMsg.Sid)
+		invokePhase := pbValueMsg.InvokePhase
 		logger.WithFields(logrus.Fields{
 			"senderId":  senderId,
 			"senderSid": senderSid,
@@ -109,6 +113,29 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		// if prb.valueVerfiy(senderId, senderSid, senderProposal, senderProof, prb.acs.Config.PublicKey) == false {
 		// 	return
 		// }
+
+		// collect PB_1 proof in SPB
+		if prb.invokePhase == "2" && invokePhase == prb.invokePhase {
+			// get the proof form message
+			proof := &tcrsa.Signature{}
+			err := json.Unmarshal(pbValueMsg.Proof, proof)
+			if err != nil {
+				logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
+			}
+			// verify the proof
+			flag, err := verfiySpbSig(senderId, senderSid, []byte("SPB_1"), senderProposal, *proof, prb.acs.Config.PublicKey)
+			if err != nil || flag == false {
+				logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(int(prb.acs.Sid)) + "] [PB] pbValue: verfiy signature failed in PB_2 for external validity.")
+				return
+			}
+			lockVector := Vector{
+				id:        senderId,
+				sid:       senderSid,
+				proposal:  senderProposal,
+				Signature: *proof,
+			}
+			prb.lockVectors = append(prb.lockVectors, lockVector)
+		}
 		
 		// Create threshold signature share
 		marshalData := getMsgdata(senderId, senderSid, senderProposal)
@@ -119,7 +146,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		}
 	
 		partSigBytes, _ := json.Marshal(partSig)
-		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, senderProposal, partSigBytes)
+		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, prb.invokePhase, senderProposal, partSigBytes)
 		if uint32(senderId) != prb.acs.ID{
 			// reply echo msg to sender
 			err = prb.acs.Unicast(prb.acs.GetNetworkInfo()[uint32(senderId)], pbEchoMsg)
@@ -199,7 +226,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			// }
 			prb.Signature = signature
 			prb.complete = true
-			prb.acs.taskSignal <- "getPbValue_" + prb.invoker
+			prb.acs.taskSignal <- "getPbValue_" + prb.invokePhase
 			logger.WithFields(logrus.Fields{
 				"signature":    len(signature),
 				"documentHash": len(prb.DocumentHash),
@@ -226,5 +253,9 @@ func (prb *ProvableBroadcastImpl) getProposal() []byte {
 
 func (prb *ProvableBroadcastImpl) getStatus() bool {
 	return prb.complete
+}
+
+func (prb *ProvableBroadcastImpl) getLockVectors() []Vector {
+	return prb.lockVectors
 }
 

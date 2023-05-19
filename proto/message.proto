@@ -91,15 +91,17 @@ message Reply {
 message PbValue {
   uint64 id = 1;
   uint64 sid = 2;
-  bytes proposal = 3;
-  bytes proof = 4;
+  string invokePhase = 3;
+  bytes proposal = 4;
+  bytes proof = 5;
 }
 
 message PbEcho {
   uint64 id = 1;
   uint64 sid = 2;
-  bytes proposal = 3;
-  bytes partialSig = 4;
+  string invokePhase = 3;
+  bytes proposal = 4;
+  bytes partialSig = 5;
 }
 
 message PbFinal {
@@ -125,8 +127,6 @@ message SpbFinal {
 message Done {
   uint64 id = 1;
   uint64 sid = 2;
-  bytes proposal = 3;
-  bytes signature = 4;
 }
 
 message Halt {

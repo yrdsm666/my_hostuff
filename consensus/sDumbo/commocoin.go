@@ -79,10 +79,17 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 	switch msg.Payload.(type) {
 	case *pb.Msg_CoinShare:
 		coinShare := msg.GetCoinShare()
+		senderId := int(coinShare.Id)
+		senderSid := int(coinShare.Sid)
+		logger.WithFields(logrus.Fields{
+			"senderId":        senderId,
+			"senderSid":       senderSid,
+		}).Info("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + " [CC] Get share msg")
+		
 		partSig := &tcrsa.SigShare{}
 		err := json.Unmarshal(coinShare.PartialSig, partSig)
 		if err != nil {
-			logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
+			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + " [CC] Unmarshal partSig failed.")
 		}
 
 		err = go_hotstuff.VerifyPartSig(partSig, []byte(cc.sidStr), cc.acs.Config.PublicKey)
@@ -90,7 +97,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 			logger.WithFields(logrus.Fields{
 				"error":        err.Error(),
 				"documentHash": hex.EncodeToString(cc.DocumentHash),
-			}).Warn("[CC] CoinShare: signature not verified!")
+			}).Warn("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + " [CC] CoinShare: share signature not verified!")
 			return
 		}
 
