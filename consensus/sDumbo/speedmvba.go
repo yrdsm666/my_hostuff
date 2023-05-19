@@ -94,6 +94,9 @@ func (mvba *SpeedMvbaImpl) startSpeedMvba(vectors []Vector) {
 }
 
 func (mvba *SpeedMvbaImpl) controller(task string) {
+	if mvba.complete == true{
+		return
+	}
 	switch task {
 	case "getPbValue_1":
 		mvba.spb.controller(task)
@@ -126,23 +129,23 @@ func (mvba *SpeedMvbaImpl) controller(task string) {
 		mvba.leader = BytesToInt(signatureHash)%mvba.acs.Config.N + 1
 		logger.Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] get the leader: " + strconv.Itoa(mvba.leader))
 		mvba.waitleader.Broadcast()
-		for _, vector := range mvba.finalVectors {
-			if vector.id == mvba.leader {
-				mvba.broadcastHalt(vector)
-				mvba.complete = true
-				mvba.leaderVector = vector
-				mvba.acs.taskSignal <- "end"
-				return
-			}
-		}
-		mvba.Ready = 1
-		for _, vector := range mvba.doneVectors {
-			if vector.id == mvba.leader {
-				mvba.broadcastPreVote(1, vector)
-				return
-			}
-		}
-		mvba.broadcastPreVote(0, Vector{})
+		// for _, vector := range mvba.finalVectors {
+		// 	if vector.id == mvba.leader {
+		// 		mvba.broadcastHalt(vector)
+		// 		mvba.complete = true
+		// 		mvba.leaderVector = vector
+		// 		mvba.acs.taskSignal <- "end"
+		// 		return
+		// 	}
+		// }
+		// mvba.Ready = 1
+		// for _, vector := range mvba.doneVectors {
+		// 	if vector.id == mvba.leader {
+		// 		mvba.broadcastPreVote(1, vector)
+		// 		return
+		// 	}
+		// }
+		// mvba.broadcastPreVote(0, Vector{})
 	}
 }
 
@@ -241,16 +244,16 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 
 		if len(mvba.finalVectors) == 2*mvba.acs.Config.F+1 && mvba.DFlag == 0 {
 			mvba.DFlag = 1
-			//mvba.broadcastDone()
-			fmt.Println("---------------- [SPB_END_1] -----------------")
-			fmt.Println("replica: ", mvba.acs.ID)
-			for i := 0; i < 2*mvba.acs.Config.F+1; i++ {
-				fmt.Println("node: ", mvba.finalVectors[i].id)
-				fmt.Println("Sid: ", mvba.finalVectors[i].sid)
-				fmt.Println("proposalHashLen: ", len(mvba.finalVectors[i].proposal))
-			}
-			fmt.Println(" GOOD WORK!.")
-			fmt.Println("---------------- [SPB_END_2] -----------------")
+			mvba.broadcastDone()
+			// fmt.Println("---------------- [SPB_END_1] -----------------")
+			// fmt.Println("replica: ", mvba.acs.ID)
+			// for i := 0; i < 2*mvba.acs.Config.F+1; i++ {
+			// 	fmt.Println("node: ", mvba.finalVectors[i].id)
+			// 	fmt.Println("Sid: ", mvba.finalVectors[i].sid)
+			// 	fmt.Println("proposalLen: ", len(mvba.finalVectors[i].proposal))
+			// }
+			// fmt.Println(" GOOD WORK!.")
+			// fmt.Println("---------------- [SPB_END_2] -----------------")
 		}
 		break
 	case *pb.Msg_Halt:
@@ -268,6 +271,12 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		if mvba.leader != finalVector.id {
 			return
 		}
+		senderId := int(haltMsg.Id)
+		senderSid := int(haltMsg.Sid)
+		logger.WithFields(logrus.Fields{
+			"senderId":  senderId,
+			"senderSid": senderSid,
+		}).Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Get halt msg")
 		fId := finalVector.id
 		fSid := finalVector.sid
 		fProposal := finalVector.proposal
@@ -275,7 +284,7 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 
 		flag, err := verfiySpbSig(fId, fSid, []byte("SPB_2"), fProposal, fsignature, mvba.acs.Config.PublicKey)
 		if err != nil || flag == false {
-			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] verfiy signature failed.")
+			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] halt: verfiy signature failed.")
 			return
 		}
 		if mvba.complete == false {
