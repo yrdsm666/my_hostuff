@@ -182,21 +182,41 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		// for i := 0; i < 2*acs.Config.F+1; i++ {
 		// 	fmt.Println("node: ", acs.vectors[i].id)
 		// 	fmt.Println("Sid: ", acs.vectors[i].sid)
-		// 	fmt.Println("proposalHashLen: ", len(acs.vectors[i].proposal))
+		// 	fmt.Println("proposalLen: ", len(acs.vectors[i].proposal))
+		// 	fmt.Println("sigHashLen: ", len(acs.vectors[i].Signature))
 		// }
 		// fmt.Println(" GOOD WORK!.")
 		// fmt.Println("---------------- [PB_END_2] -----------------")
 	case "end":
 		// commit
-		fmt.Println("")
-		fmt.Println("---------------- [END_1] -----------------")
-		vector := acs.mvba.getLeaderVector()
-		fmt.Println("副本：", acs.ID)
-		fmt.Println("node: ", vector.id)
-		fmt.Println("Sid: ", vector.sid)
-		fmt.Println("proposal: ", hex.EncodeToString(vector.proposal))
-		fmt.Println(" GOOD WORK!.")
-		fmt.Println("---------------- [END_2] -----------------")
+		// fmt.Println("")
+		// fmt.Println("---------------- [END_1] -----------------")
+		// vector := acs.mvba.getLeaderVector()
+		// fmt.Println("副本：", acs.ID)
+		// fmt.Println("leader: ", vector.id)
+		// fmt.Println("Sid: ", vector.sid)
+		// res := hex.EncodeToString(vector.proposal)
+		// fmt.Println("partProposal: ", res[100:200])
+		// fmt.Println("-----------------------------")
+		// var resVectors []Vector
+		// err := json.Unmarshal(vector.proposal, &resVectors)
+		// if err != nil {
+		// 	logger.WithField("error", err.Error()).Error("Unmarshal res failed.")
+		// }
+		// fmt.Println("resVectorsLen:", len(resVectors))
+		// for _, v := range resVectors {
+		// 	fmt.Printf("type(v): %T", v)
+		// 	fmt.Println("")
+		// 	fmt.Println("v: ", v)
+		// 	fmt.Println("pnode: ", v.id)
+		// 	fmt.Println("pSid: ", v.sid)
+		// 	fmt.Println("proposalLen: ", len(v.proposal))
+		// 	fmt.Println("sigHashLen: ", len(v.Signature))
+		// 	// rv := hex.EncodeToString(v.proposal)
+		// 	// fmt.Println("proposalLen: ", rv[10:50])
+		// }
+		// fmt.Println(" GOOD WORK!.")
+		// fmt.Println("---------------- [END_2] -----------------")
 	case "restartWithLeaderProposal":
 		fmt.Println("")
 		fmt.Println("---------------- [NEXT_l_1] -----------------")

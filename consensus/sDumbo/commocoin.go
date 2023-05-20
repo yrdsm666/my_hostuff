@@ -19,7 +19,7 @@ import (
 	pb "github.com/wjbbig/go-hotstuff/proto"
 	// "os"
 	"strconv"
-	// "sync"
+	"sync"
 )
 
 // var logger = logging.GetLogger()
@@ -38,6 +38,9 @@ type CommonCoinImpl struct {
 	coinShares   []*tcrsa.SigShare
 	DocumentHash []byte
 	Coin         tcrsa.Signature
+
+	lock         sync.Mutex
+	waitstart    *sync.Cond
 }
 
 func NewCommonCoin(acs *CommonSubsetImpl) *CommonCoinImpl {
@@ -49,14 +52,15 @@ func NewCommonCoin(acs *CommonSubsetImpl) *CommonCoinImpl {
 }
 
 func (cc *CommonCoinImpl) startCommonCoin(sidStr string) {
-	logger.Info("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + "] [CC] Start Common Coin")
+	logger.Info("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + "] [CC] Start Common Coin with SidStr " + sidStr)
 
 	cc.coinShares = make([]*tcrsa.SigShare, 0)
 	cc.sidStr = sidStr
 
 	id := int(cc.acs.ID)
 
-	coinShare, err := go_hotstuff.TSign([]byte(cc.sidStr), cc.acs.Config.PrivateKey, cc.acs.Config.PublicKey)
+	cc.DocumentHash, _ = go_hotstuff.CreateDocumentHash([]byte(cc.sidStr), cc.acs.Config.PublicKey)
+	coinShare, err := go_hotstuff.TSign(cc.DocumentHash, cc.acs.Config.PrivateKey, cc.acs.Config.PublicKey)
 	if err != nil {
 		logger.Error("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + " [CC] create the partial signature failed.")
 		return
@@ -76,6 +80,9 @@ func (cc *CommonCoinImpl) startCommonCoin(sidStr string) {
 }
 
 func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
+	if cc.complete == true {
+		return
+	}
 	switch msg.Payload.(type) {
 	case *pb.Msg_CoinShare:
 		coinShare := msg.GetCoinShare()
@@ -92,7 +99,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + " [CC] Unmarshal partSig failed.")
 		}
 
-		err = go_hotstuff.VerifyPartSig(partSig, []byte(cc.sidStr), cc.acs.Config.PublicKey)
+		err = go_hotstuff.VerifyPartSig(partSig, cc.DocumentHash, cc.acs.Config.PublicKey)
 		if err != nil {
 			logger.WithFields(logrus.Fields{
 				"error":        err.Error(),

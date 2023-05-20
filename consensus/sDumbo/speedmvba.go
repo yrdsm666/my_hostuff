@@ -82,6 +82,43 @@ func (mvba *SpeedMvbaImpl) startSpeedMvba(vectors []Vector) {
 	mvba.acs.taskPhase = "MVBA"
 	proposal, _ := json.Marshal(vectors)
 	mvba.proposal = proposal
+	fmt.Println("")
+	fmt.Println("---------------- [PB_END_1] -----------------")
+	fmt.Println("replica: ", mvba.acs.ID)
+	for i := 0; i < len(vectors); i++ {
+		fmt.Println("node: ", vectors[i].id)
+		fmt.Println("Sid: ", vectors[i].sid)
+		fmt.Println("proposalLen: ", len(vectors[i].proposal))
+		fmt.Println("sigHashLen: ", len(vectors[i].Signature))
+	}
+	fmt.Println(" GOOD WORK!.")
+	fmt.Println("---------------- [PB_END_2] -----------------")
+
+	fmt.Println("\n")
+	fmt.Println("---------------- [END_1] -----------------")
+	fmt.Println("副本：", mvba.acs.ID)
+	var resVectors []Vector
+	err := json.Unmarshal(proposal, &resVectors)
+	if err != nil {
+		logger.WithField("error", err.Error()).Error("Unmarshal res failed.")
+	}
+	fmt.Println("resVectorsLen:", len(resVectors))
+	for _, v := range resVectors {
+		fmt.Printf("type(v): %T", v)
+		fmt.Println("")
+		fmt.Println("v: ", v)
+		fmt.Println("pnode: ", v.id)
+		fmt.Println("pSid: ", v.sid)
+		fmt.Println("proposalLen: ", len(v.proposal))
+		fmt.Println("sigHashLen: ", len(v.Signature))
+		// rv := hex.EncodeToString(v.proposal)
+		// fmt.Println("proposalLen: ", rv[10:50])
+	}
+	fmt.Println(" GOOD WORK!.")
+	fmt.Println("---------------- [END_2] -----------------")
+
+
+
 	mvba.leader = 0
 	mvba.DFlag = 0
 	mvba.NFlag = 0
@@ -119,17 +156,38 @@ func (mvba *SpeedMvbaImpl) controller(task string) {
 			logger.Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Strong Provable Broadcast is not complet")
 		}
 	case "spbFinal":
-		strId := fmt.Sprintf("%d", mvba.acs.ID)
+		// start common coin
 		strSid := fmt.Sprintf("%d", mvba.acs.Sid)
-		go mvba.cc.startCommonCoin("coin" + strId + strSid)
+		go mvba.cc.startCommonCoin("coin_sid_" + strSid)
 	case "spbEnd":
 		mvba.spb.controller(task)
 	case "getCoin":
 		signature := mvba.cc.getCoin()
 		marshalData, _ := json.Marshal(signature)
 		signatureHash, _ := go_hotstuff.CreateDocumentHash(marshalData, mvba.acs.Config.PublicKey)
+		mvba.lock.Lock()
 		mvba.leader = BytesToInt(signatureHash)%mvba.acs.Config.N + 1
+		mvba.lock.Unlock()
 		logger.Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] get the leader: " + strconv.Itoa(mvba.leader))
+		//====
+		// fmt.Println("---------------- [COIN_END_1] -----------------")
+		// fmt.Println("Replica: ", mvba.acs.ID)
+		// fmt.Println("final vectors: ",len(mvba.finalVectors))
+		// for _, vector := range mvba.finalVectors {
+		// 	fmt.Println("node: ", vector.id)
+		// 	fmt.Println("Sid: ", vector.sid)
+		// 	fmt.Println("proposalLen: ", len(vector.proposal))
+		// }
+		// lockVectors := mvba.spb.getProvableBroadcast2().getLockVectors()
+		// fmt.Println("-----------------------------------------------")
+		// fmt.Println("lock vectors: ",len(lockVectors))
+		// for _, vector := range lockVectors {
+		// 	fmt.Println("node: ", vector.id)
+		// 	fmt.Println("Sid: ", vector.sid)
+		// 	fmt.Println("proposalLen: ", len(vector.proposal))
+		// }
+		// fmt.Println("---------------- [COIN_END_2] -----------------")
+		//====
 		mvba.waitleader.Broadcast()
 		for _, vector := range mvba.finalVectors {
 			if vector.id == mvba.leader {
@@ -171,6 +229,8 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 			mvba.spb.getProvableBroadcast2().handleProvableBroadcastMsg(msg)
 		}
 		break
+	case *pb.Msg_CoinShare:
+		mvba.cc.handleCommonCoinMsg(msg)
 	case *pb.Msg_Done:
 		doneMsg := msg.GetDone()
 		senderId := int(doneMsg.Id)
@@ -272,9 +332,11 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 		}
+		mvba.lock.Lock()
 		if mvba.leader == 0 {
 			mvba.waitleader.Wait()
 		}
+		mvba.lock.Unlock()
 		if mvba.leader != finalVector.id {
 			return
 		}
@@ -302,6 +364,12 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 				proposal: fProposal,
 				Signature: fsignature,
 			}
+			logger.WithFields(logrus.Fields{
+				"leaderId":  mvba.leaderVector.id,
+				"leaderSid": mvba.leaderVector.sid,
+				"leaderProposalLen":  len(mvba.leaderVector.proposal),
+				"leaderSignatureLen": len(mvba.leaderVector.Signature),
+			}).Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] success end the mvba!")
 			mvba.acs.taskSignal <- "end"
 		}
 	case *pb.Msg_PreVote:
