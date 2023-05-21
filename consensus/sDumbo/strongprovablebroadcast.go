@@ -71,10 +71,7 @@ func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []
 	spb.proBroadcast2 = NewProvableBroadcast(spb.acs)
 
 	// deep copy
-	newProposal := make([]byte, 0)
-	newProposal = append(newProposal, proposal...)
-	jBytes := []byte("SPB_1")
-	newProposal = append(newProposal, jBytes...)
+	newProposal := bytesAdd(proposal, []byte("SPB_1"))
 
 	go spb.proBroadcast1.startProvableBroadcast(newProposal, nil, "1", CheckValue)
 }
@@ -106,10 +103,7 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 		marshalData, _ := json.Marshal(signature)
 
 		// deep copy
-		newProposal := make([]byte, 0)
-		newProposal = append(newProposal, spb.proposal...)
-		jBytes := []byte("SPB_2")
-		newProposal = append(newProposal, jBytes...)
+		newProposal := bytesAdd(spb.proposal, []byte("SPB_2"))
 
 		spb.acs.taskPhase = "SPB_2"
 		go spb.proBroadcast2.startProvableBroadcast(newProposal, marshalData, "2", verfiyThld)

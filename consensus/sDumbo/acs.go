@@ -46,14 +46,14 @@ type CommonSubsetImpl struct {
 	futureVectorsCache []Vector
 }
 
+// only variables with uppercase letters can be converted to JSON
 type Vector struct {
-	id        int
-	sid       int
-	proposal  []byte
+	Id        int
+	Sid       int
+	Proposal  []byte
 	Signature tcrsa.Signature
 }
 
-// sid: session id
 func NewCommonSubset(id int) *CommonSubsetImpl {
 	logger.Debugf("[ACS] Start Common Subset.")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -189,17 +189,17 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		// fmt.Println("---------------- [PB_END_2] -----------------")
 	case "end":
 		// commit
-		// fmt.Println("")
-		// fmt.Println("---------------- [END_1] -----------------")
-		// vector := acs.mvba.getLeaderVector()
-		// fmt.Println("副本：", acs.ID)
-		// fmt.Println("leader: ", vector.id)
-		// fmt.Println("Sid: ", vector.sid)
-		// res := hex.EncodeToString(vector.proposal)
-		// fmt.Println("partProposal: ", res[100:200])
+		fmt.Println("")
+		fmt.Println("---------------- [END_1] -----------------")
+		vector := acs.mvba.getLeaderVector()
+		fmt.Println("副本：", acs.ID)
+		fmt.Println("leader: ", vector.Id)
+		fmt.Println("Sid: ", vector.Sid)
+		res := hex.EncodeToString(vector.Proposal)
+		fmt.Println("partProposal: ", res[len(res)-100:len(res)-1])
 		// fmt.Println("-----------------------------")
 		// var resVectors []Vector
-		// err := json.Unmarshal(vector.proposal, &resVectors)
+		// err := json.Unmarshal(vector.Proposal, &resVectors)
 		// if err != nil {
 		// 	logger.WithField("error", err.Error()).Error("Unmarshal res failed.")
 		// }
@@ -207,24 +207,23 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		// for _, v := range resVectors {
 		// 	fmt.Printf("type(v): %T", v)
 		// 	fmt.Println("")
-		// 	fmt.Println("v: ", v)
-		// 	fmt.Println("pnode: ", v.id)
-		// 	fmt.Println("pSid: ", v.sid)
-		// 	fmt.Println("proposalLen: ", len(v.proposal))
+		// 	fmt.Println("pnode: ", v.Id)
+		// 	fmt.Println("pSid: ", v.Sid)
+		// 	fmt.Println("proposalLen: ", len(v.Proposal))
 		// 	fmt.Println("sigHashLen: ", len(v.Signature))
-		// 	// rv := hex.EncodeToString(v.proposal)
-		// 	// fmt.Println("proposalLen: ", rv[10:50])
+		// 	rv := hex.EncodeToString(v.Proposal)
+		// 	fmt.Println("proposal: ", rv[len(rv)-100:len(rv)-1])
 		// }
-		// fmt.Println(" GOOD WORK!.")
-		// fmt.Println("---------------- [END_2] -----------------")
+		fmt.Println(" GOOD WORK!.")
+		fmt.Println("---------------- [END_2] -----------------")
 	case "restartWithLeaderProposal":
 		fmt.Println("")
 		fmt.Println("---------------- [NEXT_l_1] -----------------")
 		vector := acs.mvba.getLeaderVector()
 		fmt.Println("副本：", acs.ID)
-		fmt.Println("node: ", vector.id)
-		fmt.Println("Sid: ", vector.sid)
-		fmt.Println("proposal: ", hex.EncodeToString(vector.proposal))
+		fmt.Println("node: ", vector.Id)
+		fmt.Println("Sid: ", vector.Sid)
+		fmt.Println("proposal: ", hex.EncodeToString(vector.Proposal))
 		fmt.Println(" GOOD WORK!.")
 		fmt.Println("---------------- [NEXT_l_2] -----------------")
 	case "restart":
@@ -235,7 +234,8 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		fmt.Println("副本：", acs.ID)
 		fmt.Println("node: ", acs.ID)
 		fmt.Println("Sid: ", acs.Sid)
-		fmt.Println("proposal: ", hex.EncodeToString(proposal))
+		rv := hex.EncodeToString(proposal)
+		fmt.Println("proposal: ",  rv[len(rv)-100:len(rv)-1])
 		fmt.Println(" GOOD WORK!.")
 		fmt.Println("---------------- [NEXT_i_2] -----------------")
 	default:
@@ -249,7 +249,7 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 
 	vectors := acs.futureVectorsCache[:]
 	for i, v := range vectors {
-		if v.sid == acs.Sid {
+		if v.Sid == acs.Sid {
 			acs.vectors = append(acs.vectors, v)
 			acs.futureVectorsCache = append(acs.futureVectorsCache[:i], acs.futureVectorsCache[i+1:]...)
 		}
@@ -303,9 +303,9 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] [ACS] verfiy signature from PbFinal failed.")
 	}
 	wVector := Vector{
-		id:        senderId,
-		sid:       senderSid,
-		proposal:  senderProposal,
+		Id:        senderId,
+		Sid:       senderSid,
+		Proposal:  senderProposal,
 		Signature: *signature,
 	}
 	if senderSid > acs.Sid {
@@ -346,7 +346,7 @@ func (acs *CommonSubsetImpl) broadcastPbFinal() {
 	// broadcast msg
 	err := acs.Broadcast(pbFinalMsg)
 	if err != nil {
-		logger.WithField("error", err.Error()).Error("Broadcast failed.")
+		logger.WithField("error", err.Error()).Warn("Broadcast pbFinalMsg failed.")
 	}
 	// send to self
 	acs.MsgEntrance <- pbFinalMsg

@@ -35,6 +35,7 @@ type CommonCoinImpl struct {
 
 	sidStr       string
 	complete     bool
+	start        bool
 	coinShares   []*tcrsa.SigShare
 	DocumentHash []byte
 	Coin         tcrsa.Signature
@@ -47,7 +48,9 @@ func NewCommonCoin(acs *CommonSubsetImpl) *CommonCoinImpl {
 	cc := &CommonCoinImpl{
 		acs:      acs,
 		complete: false,
+		start:    false,
 	}
+	cc.waitstart = sync.NewCond(&cc.lock)
 	return cc
 }
 
@@ -66,23 +69,34 @@ func (cc *CommonCoinImpl) startCommonCoin(sidStr string) {
 		return
 	}
 
+	cc.lock.Lock()
+	cc.start = true
+	cc.lock.Unlock()
+	cc.waitstart.Broadcast()
+
 	coinShareBytes, _ := json.Marshal(coinShare)
 	coinShareMsg := cc.acs.CoinShareMsg(id, cc.acs.Sid, coinShareBytes)
 
 	// broadcast msg
 	err = cc.acs.Broadcast(coinShareMsg)
 	if err != nil {
-		logger.WithField("error", err.Error()).Error("[CC] Broadcast failed.")
+		logger.WithField("error", err.Error()).Warn("[CC] Broadcast failed.")
 	}
 
 	// vote self
-	// prb.acs.MsgEntrance <- pbValueMsg
+	cc.acs.MsgEntrance <- coinShareMsg
 }
 
 func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 	if cc.complete == true {
 		return
 	}
+	cc.lock.Lock()
+	if cc.start == false {
+		logger.Warn("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + " [CC] wait common coin start")
+		cc.waitstart.Wait()
+	}
+	cc.lock.Unlock()
 	switch msg.Payload.(type) {
 	case *pb.Msg_CoinShare:
 		coinShare := msg.GetCoinShare()

@@ -83,8 +83,6 @@ func start(networkType string, id int) {
 		// start server
 		rpcServer.Serve(listen)
 	}
-	
-
 }
 
 var wg sync.WaitGroup
@@ -99,7 +97,7 @@ func main(){
 	}
 
 	logger.Infof("[CONSENSUS] START!")
-	for i:=1; i<config.N+1; i++{
+	for i:=1; i<config.N; i++{
 		wg.Add(1)
 		go start(networkType, i)
 	}

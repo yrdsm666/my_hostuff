@@ -82,7 +82,7 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof 
 	// broadcast msg
 	err := prb.acs.Broadcast(pbValueMsg)
 	if err != nil {
-		logger.WithField("error", err.Error()).Error("Broadcast failed.")
+		logger.WithField("error", err.Error()).Warn("Broadcast failed.")
 	}
 
 	// vote self
@@ -123,7 +123,8 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 				logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
 			}
 			// verify the proof
-			newProposal := bytesAdd(bytesSub(senderProposal, []byte("SPB_2")), []byte("SPB_1"))
+			initProposal := bytesSub(senderProposal, []byte("SPB_2"))
+			newProposal := bytesAdd(initProposal, []byte("SPB_1"))
 			marshalData := getMsgdata(senderId, senderSid, newProposal)
 			flag, err := go_hotstuff.TVerify(prb.acs.Config.PublicKey, *proof, marshalData)
 			if err != nil || flag == false {
@@ -131,9 +132,9 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 				return
 			}
 			lockVector := Vector{
-				id:        senderId,
-				sid:       senderSid,
-				proposal:  senderProposal,
+				Id:        senderId,
+				Sid:       senderSid,
+				Proposal:  initProposal,
 				Signature: *proof,
 			}
 			prb.lockVectors = append(prb.lockVectors, lockVector)
