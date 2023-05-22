@@ -12,15 +12,19 @@ import (
 	"google.golang.org/grpc"
 	// "os"
 	// "strconv"
-	"fmt"
+	// "fmt"
 )
 
 // common hotstuff func defined in the paper
 type Asynchronous interface {
 	//Msg(msgType pb.MsgType, id int, sid int, proposal []byte, signatureByte []byte) *pb.Msg
 	GetMsgEntrance() chan<- *pb.Msg
+	GetNetworkInfo() map[uint32]string
 	GetSelfInfo() *config.ReplicaInfo
 	SafeExit()
+	Broadcast(msg *pb.Msg) error
+	Unicast(address string, msg *pb.Msg) error
+
 
 	PbValueMsg(id int, sid int, invokePhase string, proposal []byte, proof []byte) *pb.Msg
 	PbEchoMsg(id int, sid int, invokePhase string, proposal []byte, partialSig []byte) *pb.Msg
@@ -108,7 +112,6 @@ func (a *AsynchronousImpl) Broadcast(msg *pb.Msg) error {
 	for _, address := range infos {
 		err := a.Unicast(address, msg)
 		if err != nil {
-			fmt.Println("Broadcast failed to " + address)
 			broadcastErr = err
 		}
 	}

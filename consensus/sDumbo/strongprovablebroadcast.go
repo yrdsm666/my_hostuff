@@ -49,13 +49,18 @@ type StrongProvableBroadcastImpl struct {
 	DocumentHash2 []byte
 	Signature1    tcrsa.Signature
 	Signature2    tcrsa.Signature
+
+	lockStart     sync.Mutex
+	waitStart    *sync.Cond
 }
 
 func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastImpl {
 	spb := &StrongProvableBroadcastImpl{
 		acs: acs,
 		complete:        false,
+		start:  false,
 	}
+	spb.waitStart = sync.NewCond(&spb.lockStart)
 	return spb
 }
 
@@ -69,6 +74,11 @@ func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []
 	// spb.Signature2 = tcrsa.SigShare{}
 	spb.proBroadcast1 = NewProvableBroadcast(spb.acs)
 	spb.proBroadcast2 = NewProvableBroadcast(spb.acs)
+
+	spb.lockStart.Lock()
+	spb.start = true
+	spb.lockStart.Unlock()
+	spb.waitStart.Broadcast()
 
 	// deep copy
 	newProposal := bytesAdd(proposal, []byte("SPB_1"))

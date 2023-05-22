@@ -56,8 +56,12 @@ type SpeedMvbaImpl struct {
 	Signature    tcrsa.Signature
 	complete     bool
 
-	lock       sync.Mutex
-	waitleader *sync.Cond
+	lock        sync.Mutex
+	waitleader  *sync.Cond
+
+	start       bool
+	lockStart   sync.Mutex
+	waitStart  *sync.Cond
 
 	// SPB           *NewStrongProvableBroadcast
 	// cc            *NewCommonCoin
@@ -67,7 +71,9 @@ func NewSpeedMvba(acs *CommonSubsetImpl) *SpeedMvbaImpl {
 	mvba := &SpeedMvbaImpl{
 		acs:      acs,
 		complete: false,
+		start:    false,
 	}
+	mvba.waitStart = sync.NewCond(&mvba.lockStart)
 	return mvba
 }
 
@@ -124,8 +130,14 @@ func (mvba *SpeedMvbaImpl) startSpeedMvba(vectors []Vector) {
 	mvba.NFlag = 0
 	mvba.YFlag = 0
 	mvba.waitleader = sync.NewCond(&mvba.lock)
+	
 	mvba.spb = NewStrongProvableBroadcast(mvba.acs)
 	mvba.cc = NewCommonCoin(mvba.acs)
+
+	mvba.lockStart.Lock()
+	mvba.start = true
+	mvba.lockStart.Unlock()
+	mvba.waitStart.Broadcast()
 
 	go mvba.spb.startStrongProvableBroadcast(proposal)
 }
@@ -148,7 +160,7 @@ func (mvba *SpeedMvbaImpl) controller(task string) {
 			// broadcast msg
 			err := mvba.acs.Broadcast(spbFinalMsg)
 			if err != nil {
-				logger.WithField("error", err.Error()).Warn("Broadcast failed.")
+				logger.WithField("error", err.Error()).Warn("Broadcast spbFinalMsg failed.")
 			}
 			// vote self
 			mvba.acs.MsgEntrance <- spbFinalMsg
@@ -214,8 +226,20 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 	if mvba.complete == true{
 		return
 	}
+	mvba.lockStart.Lock()
+	if mvba.start == false {
+		logger.Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + " [CC] wait mvba start")
+		mvba.waitStart.Wait()
+	}
+	mvba.lockStart.Unlock()
 	switch msg.Payload.(type) {
 	case *pb.Msg_PbValue:
+		mvba.spb.lockStart.Lock()
+		if mvba.spb.start == false {
+			logger.Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + " [CC] wait spb start")
+			mvba.spb.waitStart.Wait()
+		}
+		mvba.spb.lockStart.Unlock()
 		if mvba.acs.taskPhase == "SPB_1" {
 			mvba.spb.getProvableBroadcast1().handleProvableBroadcastMsg(msg)
 		} else if mvba.acs.taskPhase == "SPB_2" {
@@ -309,9 +333,12 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		}
 		mvba.finalVectors = append(mvba.finalVectors, fVector)
 
-		if len(mvba.finalVectors) == 2*mvba.acs.Config.F+1 && mvba.DFlag == 0 {
-			mvba.DFlag = 1
-			mvba.broadcastDone()
+		if len(mvba.finalVectors) == 2*mvba.acs.Config.F+1 {
+			if mvba.DFlag == 0 {
+				mvba.DFlag = 1
+				mvba.broadcastDone()
+			} 
+			
 			// start common coin
 			if mvba.acs.taskPhase != "CC" && mvba.acs.taskPhase != "PREVOTE" && mvba.acs.taskPhase != "VOTE"{
 				mvba.controller("spbFinal")
@@ -595,10 +622,11 @@ func (mvba *SpeedMvbaImpl) broadcastDone() {
 	// broadcast msg
 	err := mvba.acs.Broadcast(doneMsg)
 	if err != nil {
-		logger.WithField("error", err.Error()).Warn("Broadcast failed.")
+		logger.WithField("error", err.Error()).Warn("Broadcast doneMsg failed.")
 	}
 
 	// send to self
+	mvba.acs.MsgEntrance <- doneMsg
 }
 
 func (mvba *SpeedMvbaImpl) broadcastHalt(vector Vector) {
@@ -608,7 +636,7 @@ func (mvba *SpeedMvbaImpl) broadcastHalt(vector Vector) {
 	// broadcast msg
 	err := mvba.acs.Broadcast(haltMsg)
 	if err != nil {
-		logger.WithField("error", err.Error()).Warn("Broadcast failed.")
+		logger.WithField("error", err.Error()).Warn("Broadcast haltMsg failed.")
 	}
 
 	// send to self
@@ -635,7 +663,7 @@ func (mvba *SpeedMvbaImpl) broadcastPreVote(flag int, vector Vector) {
 	// broadcast msg
 	err := mvba.acs.Broadcast(preVoteMsg)
 	if err != nil {
-		logger.WithField("error", err.Error()).Warn("Broadcast failed.")
+		logger.WithField("error", err.Error()).Warn("Broadcast preVote failed.")
 	}
 
 	// send to self
@@ -670,7 +698,7 @@ func (mvba *SpeedMvbaImpl) broadcastVote(flag int, proposal []byte, signature tc
 	// broadcast msg
 	err := mvba.acs.Broadcast(voteMsg)
 	if err != nil {
-		logger.WithField("error", err.Error()).Warn("Broadcast failed.")
+		logger.WithField("error", err.Error()).Warn("Broadcast voteMsg failed.")
 	}
 
 	// send to self

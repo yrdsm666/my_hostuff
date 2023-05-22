@@ -80,7 +80,7 @@ func (cc *CommonCoinImpl) startCommonCoin(sidStr string) {
 	// broadcast msg
 	err = cc.acs.Broadcast(coinShareMsg)
 	if err != nil {
-		logger.WithField("error", err.Error()).Warn("[CC] Broadcast failed.")
+		logger.WithField("error", err.Error()).Warn("[CC] Broadcast coinShareMsg failed.")
 	}
 
 	// vote self

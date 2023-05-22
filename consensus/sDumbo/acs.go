@@ -90,7 +90,7 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	go acs.receiveTaskSignal(ctx)
 	go acs.receiveMsg(ctx)
 
-	acs.controller("start")
+	go acs.controller("start")
 
 	return acs
 }
@@ -245,6 +245,7 @@ func (acs *CommonSubsetImpl) controller(task string) {
 
 func (acs *CommonSubsetImpl) startNewInstance() {
 	acs.Sid = acs.Sid + 1
+	acs.taskPhase = "PB"
 	acs.vectors = make([]Vector, 0)
 
 	vectors := acs.futureVectorsCache[:]
@@ -263,14 +264,14 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 		if len(txs) == BatchSize {           //如果txs为nil，会报错吗？
 			break
 		}
-		time.Sleep(2000 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	proposal, _ := json.Marshal(txs)
 	acs.proposal = proposal
 	proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
 	acs.proposalHash = proposalHash
-	acs.taskPhase = "PB"
+	// time.Sleep(2000 * time.Millisecond)
 	go acs.proBroadcast.startProvableBroadcast(proposalHash, nil, "acs", CheckValue)
 }
 

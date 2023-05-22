@@ -54,7 +54,7 @@ func start(networkType string, id int) {
 			logger.Info("[CONSENSUS] Exit...")
 			hotStuffService.GetImpl().SafeExit()
 			wg.Done()
-			os.Exit(1)
+			os.Exit(0)
 		}()
 		// start server
 		rpcServer.Serve(listen)	
@@ -78,7 +78,7 @@ func start(networkType string, id int) {
 			logger.Info("[CONSENSUS] Exit...")
 			hotStuffService.GetImpl().SafeExit()
 			wg.Done()
-			os.Exit(1)
+			os.Exit(0)
 		}()
 		// start server
 		rpcServer.Serve(listen)

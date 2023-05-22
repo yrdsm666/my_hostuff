@@ -82,7 +82,7 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof 
 	// broadcast msg
 	err := prb.acs.Broadcast(pbValueMsg)
 	if err != nil {
-		logger.WithField("error", err.Error()).Warn("Broadcast failed.")
+		logger.WithField("error", err.Error()).Warn("Broadcast pbValueMsg failed.")
 	}
 
 	// vote self
