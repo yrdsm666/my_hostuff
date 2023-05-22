@@ -26,7 +26,7 @@ import (
 // var logger = logging.GetLogger()
 
 type SpeedMvba interface {
-	startSpeedMvba(vectors []Vector)
+	startSpeedMvba(proposal []byte)
 	handleSpeedMvbaMsg(msg *pb.Msg)
 	controller(task string)
 	getLeaderVector() Vector
@@ -52,19 +52,16 @@ type SpeedMvbaImpl struct {
 	YFlag        int
 	YFinal       []*tcrsa.SigShare
 	NFinal       []*tcrsa.SigShare
-	DocumentHash []byte
 	Signature    tcrsa.Signature
-	complete     bool
 
 	lock        sync.Mutex
 	waitleader  *sync.Cond
 
+	complete     bool
 	start       bool
-	lockStart   sync.Mutex
-	waitStart  *sync.Cond
 
-	// SPB           *NewStrongProvableBroadcast
-	// cc            *NewCommonCoin
+	lockStart   sync.Mutex
+	waitStart   *sync.Cond
 }
 
 func NewSpeedMvba(acs *CommonSubsetImpl) *SpeedMvbaImpl {
@@ -77,16 +74,15 @@ func NewSpeedMvba(acs *CommonSubsetImpl) *SpeedMvbaImpl {
 	return mvba
 }
 
-func (mvba *SpeedMvbaImpl) startSpeedMvba(vectors []Vector) {
+func (mvba *SpeedMvbaImpl) startSpeedMvba(proposal []byte) {
 	logger.Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Start Speed Mvba")
 
+	mvba.complete = false
 	mvba.doneVectors = make([]Vector, 0)
 	mvba.finalVectors = make([]Vector, 0)
 	mvba.preVoteNo = make([]*tcrsa.SigShare, 0)
 	mvba.YFinal = make([]*tcrsa.SigShare, 0)
 	mvba.NFinal = make([]*tcrsa.SigShare, 0)
-	mvba.acs.taskPhase = "MVBA"
-	proposal, _ := json.Marshal(vectors)
 	mvba.proposal = proposal
 	// fmt.Println("")
 	// fmt.Println("---------------- [PB_END_1] -----------------")
@@ -126,6 +122,7 @@ func (mvba *SpeedMvbaImpl) startSpeedMvba(vectors []Vector) {
 
 
 	mvba.leader = 0
+	mvba.leaderVector = Vector{}
 	mvba.DFlag = 0
 	mvba.NFlag = 0
 	mvba.YFlag = 0
@@ -133,6 +130,7 @@ func (mvba *SpeedMvbaImpl) startSpeedMvba(vectors []Vector) {
 	
 	mvba.spb = NewStrongProvableBroadcast(mvba.acs)
 	mvba.cc = NewCommonCoin(mvba.acs)
+	mvba.acs.taskPhase = "SPB_1"
 
 	mvba.lockStart.Lock()
 	mvba.start = true
@@ -214,8 +212,10 @@ func (mvba *SpeedMvbaImpl) controller(task string) {
 		lockVectors := mvba.spb.getProvableBroadcast2().getLockVectors()
 		for _, vector := range lockVectors {
 			if vector.Id == mvba.leader {
-				mvba.broadcastPreVote(1, vector)
-				return
+				if int(mvba.acs.ID) == 4{
+					mvba.broadcastPreVote(1, vector)
+					return
+				}
 			}
 		}
 		mvba.broadcastPreVote(0, Vector{})
@@ -226,23 +226,20 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 	if mvba.complete == true{
 		return
 	}
+
+	// ensure mvba is working
 	mvba.lockStart.Lock()
 	if mvba.start == false {
 		logger.Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + " [CC] wait mvba start")
 		mvba.waitStart.Wait()
 	}
 	mvba.lockStart.Unlock()
+
 	switch msg.Payload.(type) {
 	case *pb.Msg_PbValue:
-		mvba.spb.lockStart.Lock()
-		if mvba.spb.start == false {
-			logger.Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + " [CC] wait spb start")
-			mvba.spb.waitStart.Wait()
-		}
-		mvba.spb.lockStart.Unlock()
 		if mvba.acs.taskPhase == "SPB_1" {
 			mvba.spb.getProvableBroadcast1().handleProvableBroadcastMsg(msg)
-		} else if mvba.acs.taskPhase == "SPB_2" {
+		} else {
 			mvba.spb.getProvableBroadcast2().handleProvableBroadcastMsg(msg)
 		}
 		break
@@ -255,51 +252,20 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		break
 	case *pb.Msg_CoinShare:
 		mvba.cc.handleCommonCoinMsg(msg)
-	case *pb.Msg_Done:
-		doneMsg := msg.GetDone()
-		senderId := int(doneMsg.Id)
-		senderSid := int(doneMsg.Sid)
-		logger.WithFields(logrus.Fields{
-			"senderId":  senderId,
-			"senderSid": senderSid,
-		}).Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Get Done msg")
-		// senderProposal := doneMsg.Proposal
-		// signature := &tcrsa.Signature{}
-		// err := json.Unmarshal(doneMsg.Signature, signature)
-		// if err != nil {
-		// 	logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
-		// }
-
-		// flag, err := verfiySpbSig(senderId, senderSid, []byte("SPB_1"), senderProposal, *signature, mvba.acs.Config.PublicKey)
-		// if err != nil || flag == false {
-		// 	logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] done: verfiy signature failed.")
-		// 	return
-		// }
-
-		dVector := Vector{
-			Id:        senderId,
-			Sid:       senderSid,
-			// proposal:  senderProposal,
-			// Signature: *signature,
-		}
-		mvba.doneVectors = append(mvba.doneVectors, dVector)
-		if len(mvba.doneVectors) == mvba.acs.Config.F+1 && mvba.DFlag == 0 {
-			mvba.DFlag = 1
-			mvba.broadcastDone()
-		}
-		if len(mvba.doneVectors) == 2*mvba.acs.Config.F+1 {
-			// end the spb
-			// mvba.controller("doneFinal")
-			if mvba.acs.taskPhase != "CC" && mvba.acs.taskPhase != "PREVOTE" && mvba.acs.taskPhase != "VOTE"{
-				mvba.controller("spbFinal")
-			}
-			mvba.controller("spbEnd")
-		}
-		break
 	case *pb.Msg_SpbFinal:
 		spbFinal := msg.GetSpbFinal()
 		senderId := int(spbFinal.Id)
 		senderSid := int(spbFinal.Sid)
+
+		// Ignore messages from other sid
+		if senderSid != mvba.acs.Sid {
+			logger.WithFields(logrus.Fields{
+				"senderId":  senderId,
+				"senderSid": senderSid,
+			}).Warn("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [ACS] Get unmatched sid of spbFinal msg")
+			return
+		}
+
 		senderProposal := spbFinal.Proposal
 		if senderSid != mvba.acs.Sid {
 			logger.WithFields(logrus.Fields{
@@ -354,6 +320,57 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 			// fmt.Println("---------------- [SPB_END_2] -----------------")
 		}
 		break
+	case *pb.Msg_Done:
+		doneMsg := msg.GetDone()
+		senderId := int(doneMsg.Id)
+		senderSid := int(doneMsg.Sid)
+
+		// Ignore messages from other sid
+		if senderSid != mvba.acs.Sid {
+			logger.WithFields(logrus.Fields{
+				"senderId":  senderId,
+				"senderSid": senderSid,
+			}).Warn("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [ACS] Get unmatched sid of done msg")
+			return
+		}
+
+		logger.WithFields(logrus.Fields{
+			"senderId":  senderId,
+			"senderSid": senderSid,
+		}).Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Get Done msg")
+		// senderProposal := doneMsg.Proposal
+		// signature := &tcrsa.Signature{}
+		// err := json.Unmarshal(doneMsg.Signature, signature)
+		// if err != nil {
+		// 	logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
+		// }
+
+		// flag, err := verfiySpbSig(senderId, senderSid, []byte("SPB_1"), senderProposal, *signature, mvba.acs.Config.PublicKey)
+		// if err != nil || flag == false {
+		// 	logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] done: verfiy signature failed.")
+		// 	return
+		// }
+
+		dVector := Vector{
+			Id:        senderId,
+			Sid:       senderSid,
+			// proposal:  senderProposal,
+			// Signature: *signature,
+		}
+		mvba.doneVectors = append(mvba.doneVectors, dVector)
+		if len(mvba.doneVectors) == mvba.acs.Config.F+1 && mvba.DFlag == 0 {
+			mvba.DFlag = 1
+			mvba.broadcastDone()
+		}
+		if len(mvba.doneVectors) == 2*mvba.acs.Config.F+1 {
+			// end the spb
+			// mvba.controller("doneFinal")
+			if mvba.acs.taskPhase != "CC" && mvba.acs.taskPhase != "PREVOTE" && mvba.acs.taskPhase != "VOTE"{
+				mvba.controller("spbFinal")
+			}
+			mvba.controller("spbEnd")
+		}
+		break
 	case *pb.Msg_Halt:
 		haltMsg := msg.GetHalt()
 		// senderSid := int(halt.Sid)
@@ -373,10 +390,21 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		}
 		senderId := int(haltMsg.Id)
 		senderSid := int(haltMsg.Sid)
+
+		// Ignore messages from other sid
+		if senderSid != mvba.acs.Sid {
+			logger.WithFields(logrus.Fields{
+				"senderId":  senderId,
+				"senderSid": senderSid,
+			}).Warn("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [ACS] Get unmatched sid of halt msg")
+			return
+		}
+
 		logger.WithFields(logrus.Fields{
 			"senderId":  senderId,
 			"senderSid": senderSid,
 		}).Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Get halt msg")
+
 		fId := finalVector.Id
 		fSid := finalVector.Sid
 		fProposal := finalVector.Proposal
@@ -387,6 +415,7 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] halt: verfiy signature failed.")
 			return
 		}
+
 		if mvba.complete == false {
 			mvba.complete = true
 			mvba.leaderVector = Vector{
@@ -408,21 +437,47 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		flag := preVoteMsg.Flag
 		senderId := int(preVoteMsg.Id)
 		senderSid := int(preVoteMsg.Sid)
+
+		// Test abnormal situations
+		if senderId == 4 && int(mvba.acs.ID) != 4 {
+			break
+		}
+
+		// Ignore messages from other sid
+		if senderSid != mvba.acs.Sid {
+			logger.WithFields(logrus.Fields{
+				"senderId":  senderId,
+				"senderSid": senderSid,
+			}).Warn("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [ACS] Get unmatched sid of preVote msg")
+			return
+		}
+
 		logger.WithFields(logrus.Fields{
 			"senderId":  senderId,
 			"senderSid": senderSid,
 			"flag":      flag,
 		}).Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Get PreVote msg")
+
 		leaderProposal := preVoteMsg.Proposal
 		leader := int(preVoteMsg.Leader)
+
 		mvba.lock.Lock()
 		if mvba.leader == 0 {
 			mvba.waitleader.Wait()
 		}
 		mvba.lock.Unlock()
+
 		if mvba.leader != leader {
+			logger.Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] prevote: leader in msg is mismatch")
 			return
 		}
+
+		if mvba.YFlag == 1 || mvba.NFlag == 1{
+			// YFlag == 1 or mvba.NFlag == 1 means that the prevote phase has ended
+			// so the following operations are unnecessary
+			return
+		}
+
 		if flag == 1 && mvba.NFlag == 0 && mvba.YFlag == 0{
 			signature := &tcrsa.Signature{}
 			err := json.Unmarshal(preVoteMsg.Signature, signature)
@@ -440,21 +495,18 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 				}).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] preVote: verfiy signature failed.")
 				return
 			}
+
 			if mvba.NFlag == 0 && mvba.YFlag == 0{
 				mvba.YFlag = 1
 				mvba.broadcastVote(1, leaderProposal, *signature)
 			}
-		} else{
-			if mvba.YFlag == 1{
-				// YFlag == 1 means that the prevote phase has ended
-				// so the following operations are unnecessary
-				return
-			}
+		} else {
 			partSig := &tcrsa.SigShare{}
 			err := json.Unmarshal(preVoteMsg.PartialSig, partSig)
 			if err != nil {
 				logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
 			}
+
 			nullBytes := []byte("null" + "NO" + "Sid_" + strconv.Itoa(mvba.acs.Sid))
 			marshalData := getMsgdata(mvba.leader, mvba.acs.Sid, nullBytes)
 			documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, mvba.acs.Config.PublicKey)
@@ -466,7 +518,9 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 				}).Warn("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] preVote: sigShare not verified!")
 				return
 			}
+
 			mvba.preVoteNo = append(mvba.preVoteNo, partSig)
+
 			if len(mvba.preVoteNo) == 2*mvba.acs.Config.F+1 && mvba.YFlag == 0 {
 				signature, err := go_hotstuff.CreateFullSignature(documentHash, mvba.preVoteNo, mvba.acs.Config.PublicKey)
 				if err != nil {
@@ -484,27 +538,48 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		flag := voteMsg.Flag
 		senderId := int(voteMsg.Id)
 		senderSid := int(voteMsg.Sid)
+
+		// Ignore messages from other sid
+		if senderSid != mvba.acs.Sid {
+			logger.WithFields(logrus.Fields{
+				"senderId":  senderId,
+				"senderSid": senderSid,
+				"flag":      flag,
+			}).Warn("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Get unmatched sid of vote msg")
+			return
+		}
+
 		logger.WithFields(logrus.Fields{
 			"senderId":  senderId,
 			"senderSid": senderSid,
 			"flag":      flag,
 		}).Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] Get Vote msg")
+
 		leaderProposal := voteMsg.Proposal
 		leader := int(voteMsg.Leader)
+
 		mvba.lock.Lock()
 		if mvba.leader == 0 {
 			mvba.waitleader.Wait()
 		}
 		mvba.lock.Unlock()
+
 		if mvba.leader != leader {
-			logger.Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] vote: leader in msg is mismatch")
+			logger.WithFields(logrus.Fields{
+				"senderId":  senderId,
+				"senderSid": senderSid,
+				"nowleader":  mvba.leader,
+				"msgleader":  leader,
+			}).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] vote: leader in msg is mismatch")
 			return
 		}
+
 		signature := &tcrsa.Signature{}
 		err := json.Unmarshal(voteMsg.Signature, signature)
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 		}
+
 		partSig := &tcrsa.SigShare{}
 		err = json.Unmarshal(voteMsg.PartialSig, partSig)
 		if err != nil {
@@ -515,6 +590,15 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		if flag == 1 {
 			res, err := verfiySpbSig(mvba.leader, senderSid, []byte("SPB_1"), leaderProposal, *signature, mvba.acs.Config.PublicKey)
 			if err != nil || res == false {
+				logger.WithFields(logrus.Fields{
+					"error": err.Error(),
+					"senderId":  senderId,
+					"senderSid": senderSid,
+					"nowleader":  mvba.leader,
+					"msgleader":  leader,
+					"leaderProposal":  len(leaderProposal),
+					"signature":  len(*signature),
+				}).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] vote: verfiy signature failed.")
 				logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(int(mvba.acs.Sid)) + "] [MVBA] vote: verfiy signature failed.")
 				return
 			}
@@ -530,12 +614,13 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 				}).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] vote: partSig not verified!")
 				return
 			}
-			// mvba.leaderVector = Vector{
-			// 	Id:    mvba.leader,
-			// 	Sid:   mvba.acs.Sid,
-			// 	Proposal: leaderProposal,
-			// 	Signature: *signature,
-			// }
+
+			mvba.leaderVector = Vector{
+				Id:    mvba.leader,
+				Sid:   mvba.acs.Sid,
+				Proposal: leaderProposal,
+				Signature: *signature,
+			}
 
 			mvba.YFinal = append(mvba.YFinal, partSig)
 		}else{
@@ -558,6 +643,7 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 				}).Warn("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] vote: partSig not verified!")
 				return
 			}
+
 			mvba.NFinal = append(mvba.NFinal, partSig)
 		}
 
@@ -570,12 +656,14 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 						"documentHash": hex.EncodeToString(documentHash),
 					}).Error("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] vote: create signature failed!")
 				}
+
 				logger.WithFields(logrus.Fields{
 					"leader":       leader,
 					"leaderSid":    mvba.acs.Sid,
 					"signature":    len(leaderSignature),
 					// "documentHash": hex.EncodeToString(documentHash),
 				}).Info("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] vote: create full signature of halt")
+
 				// flag, err := verfiySpbSig(leader, mvba.acs.Sid, []byte("SPB_2"), leaderProposal, leaderSignature, mvba.acs.Config.PublicKey)
 				// if err != nil || flag == false {
 				// 	logger.WithFields(logrus.Fields{
@@ -592,6 +680,7 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 					Proposal:  leaderProposal,
 					Signature: leaderSignature,
 				}
+
 				mvba.broadcastHalt(vector)
 			} else {
 				if len(mvba.NFinal) == 2*mvba.acs.Config.F+1{
@@ -655,7 +744,7 @@ func (mvba *SpeedMvbaImpl) broadcastPreVote(flag int, vector Vector) {
 		}
 		partSigBytes, _ := json.Marshal(partSig)
 		preVoteMsg = mvba.acs.PreVoteMsg(int(mvba.acs.ID), mvba.acs.Sid, mvba.leader, flag, nil, nil, partSigBytes)
-	}else{
+	} else {
 		signatureBytes, _ := json.Marshal(vector.Signature)
 		preVoteMsg = mvba.acs.PreVoteMsg(int(mvba.acs.ID), mvba.acs.Sid, mvba.leader, flag, vector.Proposal, signatureBytes, nil)
 	}

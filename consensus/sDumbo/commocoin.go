@@ -93,7 +93,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 	}
 	cc.lock.Lock()
 	if cc.start == false {
-		logger.Warn("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + " [CC] wait common coin start")
+		logger.Warn("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + "] [CC] wait common coin start")
 		cc.waitstart.Wait()
 	}
 	cc.lock.Unlock()
@@ -105,7 +105,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 		logger.WithFields(logrus.Fields{
 			"senderId":        senderId,
 			"senderSid":       senderSid,
-		}).Info("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + " [CC] Get share msg")
+		}).Info("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + "] [CC] Get share msg")
 		
 		partSig := &tcrsa.SigShare{}
 		err := json.Unmarshal(coinShare.PartialSig, partSig)

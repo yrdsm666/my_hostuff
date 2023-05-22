@@ -97,7 +97,7 @@ func main(){
 	}
 
 	logger.Infof("[CONSENSUS] START!")
-	for i:=1; i<config.N; i++{
+	for i:=1; i<config.N+1; i++{
 		wg.Add(1)
 		go start(networkType, i)
 	}

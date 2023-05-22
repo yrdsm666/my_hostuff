@@ -18,7 +18,7 @@ import (
 
 	// "os"
 	"strconv"
-	// "sync"
+	"sync"
 	// "fmt"
 )
 
@@ -41,6 +41,7 @@ type StrongProvableBroadcastImpl struct {
 
 	proposal []byte
 	complete      bool
+	// start         bool
 	proBroadcast1 ProvableBroadcast
 	proBroadcast2 ProvableBroadcast
 	// EchoVote      []*tcrsa.SigShare
@@ -51,16 +52,16 @@ type StrongProvableBroadcastImpl struct {
 	Signature2    tcrsa.Signature
 
 	lockStart     sync.Mutex
-	waitStart    *sync.Cond
+	waitStart     *sync.Cond
 }
 
 func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastImpl {
 	spb := &StrongProvableBroadcastImpl{
 		acs: acs,
 		complete:        false,
-		start:  false,
+		// start:  false,
 	}
-	spb.waitStart = sync.NewCond(&spb.lockStart)
+	// spb.waitStart = sync.NewCond(&spb.lockStart)
 	return spb
 }
 
@@ -75,10 +76,10 @@ func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []
 	spb.proBroadcast1 = NewProvableBroadcast(spb.acs)
 	spb.proBroadcast2 = NewProvableBroadcast(spb.acs)
 
-	spb.lockStart.Lock()
-	spb.start = true
-	spb.lockStart.Unlock()
-	spb.waitStart.Broadcast()
+	// spb.lockStart.Lock()
+	// spb.start = true
+	// spb.lockStart.Unlock()
+	// spb.waitStart.Broadcast()
 
 	// deep copy
 	newProposal := bytesAdd(proposal, []byte("SPB_1"))
@@ -160,4 +161,5 @@ func (spb *StrongProvableBroadcastImpl) getProvableBroadcast1() ProvableBroadcas
 func (spb *StrongProvableBroadcastImpl) getProvableBroadcast2() ProvableBroadcast {
 	return spb.proBroadcast2
 }
+
 

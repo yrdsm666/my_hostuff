@@ -35,7 +35,6 @@ type ProvableBroadcast interface {
 }
 
 type ProvableBroadcastImpl struct {
-	//consensus.AsynchronousImpl
 	acs *CommonSubsetImpl
 
 	proposal    []byte
@@ -43,8 +42,6 @@ type ProvableBroadcastImpl struct {
 	valueVerfiy func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool
 	complete    bool
 	invokePhase string // which phase invoke the PB
-	// vectors       []MvbaInputVector
-	// futureVectors []MvbaInputVector
 	EchoVote     []*tcrsa.SigShare
 	lockVectors  []Vector
 	DocumentHash []byte
@@ -166,9 +163,11 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		if len(prb.EchoVote) >= 2*prb.acs.Config.F+1 {
 			return
 		}
+		
 		pbEchoMsg := msg.GetPbEcho()
-		// Ignore messages from old sid
 		senderSid := int(pbEchoMsg.Sid)
+
+		// Ignore messages from old sid
 		if senderSid != prb.acs.Sid {
 			logger.WithFields(logrus.Fields{
 				"senderId":  int(pbEchoMsg.Id),
@@ -176,12 +175,14 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get mismatch sid PbEcho msg")
 			return
 		}
-		// Ignore messagemessages from other provable broadcast instance
+
+		// Ignore messages from other provable broadcast instance
 		senderProposal := pbEchoMsg.Proposal
 		if bytes.Compare(senderProposal, prb.proposal) != 0 {
 			logger.Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get mismatch proposal PbEcho msg")
 			return
 		}
+
 		logger.WithFields(logrus.Fields{
 			"senderId":  int(pbEchoMsg.Id),
 			"senderSid": senderSid,
@@ -235,6 +236,11 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 				"documentHash": len(prb.DocumentHash),
 				"echoVote":     len(prb.EchoVote),
 			}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: create full signature")
+			// if len(signature) != 256 {
+			// 	logger.WithFields(logrus.Fields{
+			// 		"signature":    hex.EncodeToString(signature),
+			// 	}).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: create full signature")
+			// }
 		}
 		break
 	default:
