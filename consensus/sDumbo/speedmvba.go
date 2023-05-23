@@ -237,6 +237,8 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 
 	switch msg.Payload.(type) {
 	case *pb.Msg_PbValue:
+		// pass messages based on the current phase
+		// in fact, no matter which PB instance the pbValue message is passed to, the processing method is the same
 		if mvba.acs.taskPhase == "SPB_1" {
 			mvba.spb.getProvableBroadcast1().handleProvableBroadcastMsg(msg)
 		} else {
@@ -244,6 +246,7 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 		}
 		break
 	case *pb.Msg_PbEcho:
+		// pass messages based on the current phase
 		if mvba.acs.taskPhase == "SPB_1" {
 			mvba.spb.getProvableBroadcast1().handleProvableBroadcastMsg(msg)
 		} else if mvba.acs.taskPhase == "SPB_2" {
