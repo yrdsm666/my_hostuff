@@ -32,6 +32,7 @@ type ProvableBroadcast interface {
 	getProposal() []byte
 	getStatus() bool
 	getLockVectors() []Vector
+	getValueVectors() map[int][]byte
 }
 
 type ProvableBroadcastImpl struct {
@@ -44,8 +45,10 @@ type ProvableBroadcastImpl struct {
 	invokePhase string // which phase invoke the PB
 	EchoVote     []*tcrsa.SigShare
 	lockVectors  []Vector
+	valueVectors map[int][]byte
 	DocumentHash []byte
 	Signature    tcrsa.Signature
+	lockSet      sync.Mutex
 }
 
 func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
@@ -61,7 +64,10 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof 
 
 	prb.invokePhase = invokePhase
 	prb.EchoVote = make([]*tcrsa.SigShare, 0)
+	prb.lockSet.Lock()
 	prb.lockVectors = make([]Vector, 0)
+	prb.lockSet.Unlock()
+	prb.valueVectors = make(map[int][]byte)
 	prb.valueVerfiy = valueValidation
 	// fmt.Println("valueValidation:")
 	// fmt.Println(valueValidation)
@@ -134,7 +140,13 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 				Proposal:  initProposal,
 				Signature: *proof,
 			}
+			prb.lockSet.Lock()
 			prb.lockVectors = append(prb.lockVectors, lockVector)
+			prb.lockSet.Unlock()
+		}
+
+		if prb.invokePhase == "acs" && invokePhase == prb.invokePhase {
+			prb.valueVectors[senderId] = senderProposal
 		}
 		
 		// Create threshold signature share
@@ -266,5 +278,9 @@ func (prb *ProvableBroadcastImpl) getStatus() bool {
 
 func (prb *ProvableBroadcastImpl) getLockVectors() []Vector {
 	return prb.lockVectors
+}
+
+func (prb *ProvableBroadcastImpl) getValueVectors() map[int][]byte {
+	return prb.valueVectors
 }
 

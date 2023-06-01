@@ -28,6 +28,7 @@ type CommonCoin interface {
 	startCommonCoin(sidStr string)
 	handleCommonCoinMsg(msg *pb.Msg)
 	getCoin() tcrsa.Signature
+	getStatus() bool
 }
 
 type CommonCoinImpl struct {
@@ -148,4 +149,8 @@ func (cc *CommonCoinImpl) getCoin() tcrsa.Signature {
 		return nil
 	}
 	return cc.Coin
+}
+
+func (cc *CommonCoinImpl) getStatus() bool {
+	return cc.complete
 }

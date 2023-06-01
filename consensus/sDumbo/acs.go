@@ -113,6 +113,8 @@ func (acs *CommonSubsetImpl) handleMsg(msg *pb.Msg) {
 		// send the request to the leader, if the replica is not the leader
 		break
 	case *pb.Msg_PbValue:
+		pbValueMsg := msg.GetPbValue()
+		invokePhase := pbValueMsg.InvokePhase
 		if acs.taskPhase == "PB" {
 			acs.proBroadcast.handleProvableBroadcastMsg(msg)
 		} else {
@@ -279,12 +281,17 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 
 	proposal, _ := json.Marshal(txs)
 	acs.proposal = proposal
-	proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
-	acs.proposalHash = proposalHash
-	go acs.proBroadcast.startProvableBroadcast(proposalHash, nil, "acs", CheckValue)
+	// proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
+	// acs.proposalHash = proposalHash
+	// go acs.proBroadcast.startProvableBroadcast(proposalHash, nil, "acs", CheckValue)
+	go acs.proBroadcast.startProvableBroadcast(proposal, nil, "acs", CheckValue)
 }
 
 func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
+	if len(acs.inputVectors) >= 2*acs.Config.F+1 {
+		return
+	}
+
 	pbFinal := msg.GetPbFinal()
 	senderId := int(pbFinal.Id)
 	senderSid := int(pbFinal.Sid)
@@ -354,7 +361,9 @@ func (acs *CommonSubsetImpl) broadcastPbFinal() {
 	signature := acs.proBroadcast.getSignature()
 	marshal, _ := json.Marshal(signature)
 	proposal := acs.proBroadcast.getProposal()
-	pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.Sid, proposal, marshal)
+	proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
+	// pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.Sid, proposal, marshal)
+	pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.Sid, proposalHash, marshal)
 
 	// broadcast msg
 	err := acs.Broadcast(pbFinalMsg)
