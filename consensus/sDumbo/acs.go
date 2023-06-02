@@ -35,15 +35,21 @@ type CommonSubsetImpl struct {
 	cancel       context.CancelFunc
 	taskSignal   chan string
 	taskPhase    string
-	// restart            chan bool
-	// taskEndFlag        bool
-	// msgEndFlag         bool
-
+	
+	// acs components
 	proBroadcast ProvableBroadcast
 	mvba         SpeedMvba
-	// vectors map[int][]Vector
+
 	inputVectors []Vector
 }
+
+const (
+	PB_PHASE string = "PB"
+	SPB_PHASE_1 string = "SPB_1"
+	SPB_PHASE_2 string = "SPB_2"
+	CC_PHASE string = "CC"
+	COINSHARE string = "COIN_SHARE_WITH_SID_"
+)
 
 // only variables with uppercase letters can be converted to JSON
 type Vector struct {
@@ -83,7 +89,6 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	acs.proBroadcast = NewProvableBroadcast(acs)
 	acs.mvba = NewSpeedMvba(acs)
 
-	// acs.controller("start")
 	go acs.receiveTaskSignal(ctx)
 	go acs.receiveMsg(ctx)
 
@@ -110,18 +115,17 @@ func (acs *CommonSubsetImpl) handleMsg(msg *pb.Msg) {
 		// logger.WithField("content", request.String()).Debug("[ACS] Get request msg.")
 		// put the cmd into the cmdset
 		acs.TxnSet.Add(request.Cmd)
-		// send the request to the leader, if the replica is not the leader
 		break
 	case *pb.Msg_PbValue:
-		// pbValueMsg := msg.GetPbValue()
-		// invokePhase := pbValueMsg.InvokePhase
-		if acs.taskPhase == "PB" {
+		pbValueMsg := msg.GetPbValue()
+		invokePhase := pbValueMsg.InvokePhase
+		if invokePhase == PB_PHASE || acs.taskPhase == PB_PHASE{
 			acs.proBroadcast.handleProvableBroadcastMsg(msg)
 		} else {
 			acs.mvba.handleSpeedMvbaMsg(msg)
 		}
 	case *pb.Msg_PbEcho:
-		if acs.taskPhase == "PB" {
+		if acs.taskPhase == PB_PHASE {
 			acs.proBroadcast.handleProvableBroadcastMsg(msg)
 		} else {
 			acs.mvba.handleSpeedMvbaMsg(msg)
@@ -157,11 +161,10 @@ func (acs *CommonSubsetImpl) receiveTaskSignal(ctx context.Context) {
 }
 
 func (acs *CommonSubsetImpl) controller(task string) {
-	//fmt.Println("start "+task+" end")
 	switch task {
 	case "start":
 		go acs.startNewInstance()
-	case "getPbValue_acs":
+	case "getPbValue_" + PB_PHASE:
 		acs.broadcastPbFinal()
 	case "getPbValue_1":
 		go acs.mvba.controller(task)
@@ -172,21 +175,10 @@ func (acs *CommonSubsetImpl) controller(task string) {
 	case "getCoin":
 		go acs.mvba.controller(task)
 	case "pbFinal":
-		if acs.taskPhase == "PB" {
+		if acs.taskPhase == PB_PHASE {
 			proposal, _ := json.Marshal(acs.inputVectors)
 			go acs.mvba.startSpeedMvba(proposal)
 		}
-		// fmt.Println("")
-		// fmt.Println("---------------- [PB_END_1] -----------------")
-		// fmt.Println("replica: ", acs.ID)
-		// for i := 0; i < 2*acs.Config.F+1; i++ {
-		// 	fmt.Println("node: ", acs.inputVectors[i].id)
-		// 	fmt.Println("Sid: ", acs.inputVectors[i].sid)
-		// 	fmt.Println("proposalLen: ", len(acs.inputVectors[i].proposal))
-		// 	fmt.Println("sigHashLen: ", len(acs.inputVectors[i].Signature))
-		// }
-		// fmt.Println(" GOOD WORK!.")
-		// fmt.Println("---------------- [PB_END_2] -----------------")
 	case "end":
 		// commit
 		fmt.Println("")
@@ -207,16 +199,16 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		fmt.Println("resVectorsLen:", len(resVectors))
 		valueVectors := acs.proBroadcast.getValueVectors()
 		var resTxs []string
-		for _, v := range resVectors {
-			fmt.Printf("type(v): %T", v)
-			fmt.Println("")
-			fmt.Println("pnode: ", v.Id)
-			fmt.Println("pSid: ", v.Sid)
-			fmt.Println("proposalLen: ", len(v.Proposal))
-			fmt.Println("sigHashLen: ", len(v.Signature))
-			rv := hex.EncodeToString(v.Proposal)
-			fmt.Println("proposal: ", rv[len(rv)-100:len(rv)-1])
-		}
+		// for _, v := range resVectors {
+		// 	fmt.Printf("type(v): %T", v)
+		// 	fmt.Println("")
+		// 	fmt.Println("pnode: ", v.Id)
+		// 	fmt.Println("pSid: ", v.Sid)
+		// 	fmt.Println("proposalLen: ", len(v.Proposal))
+		// 	fmt.Println("sigHashLen: ", len(v.Signature))
+		// 	rv := hex.EncodeToString(v.Proposal)
+		// 	fmt.Println("proposal: ", rv[len(rv)-100:len(rv)-1])
+		// }
 		for _, v := range resVectors {
 			value, ok := valueVectors[v.Id]
 			if ok {
@@ -228,7 +220,7 @@ func (acs *CommonSubsetImpl) controller(task string) {
 						"vProposal": hex.EncodeToString(v.Proposal),
 						"valueHash": hex.EncodeToString(valueHash),
 					}).Error("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(acs.Sid) + "] [ACS] The mvba result is not Hash of value proposal!")
-					return
+					continue
 				}
 				var txs []string
 				err := json.Unmarshal(value, &txs)
@@ -238,16 +230,10 @@ func (acs *CommonSubsetImpl) controller(task string) {
 				fmt.Println("len(txs):",len(txs))
 				resTxs = append(resTxs, txs...)
 			} else {
-				fmt.Println("loss value!")
+				fmt.Println("len(valueVectors): ", len(valueVectors))
+				fmt.Println("loss value from node: ", v.Id)
 			}
-			// fmt.Printf("type(v): %T", v)
-			// fmt.Println("")
-			// fmt.Println("pnode: ", v.Id)
-			// fmt.Println("pSid: ", v.Sid)
-			// fmt.Println("proposalLen: ", len(v.Proposal))
-			// fmt.Println("sigHashLen: ", len(v.Signature))
-			// rv := hex.EncodeToString(v.Proposal)
-			// fmt.Println("proposal: ", rv[len(rv)-100:len(rv)-1])
+			
 		}
 		fmt.Println("resTxs:", resTxs)
 		fmt.Println(" GOOD WORK!.")
@@ -300,10 +286,12 @@ func (acs *CommonSubsetImpl) controller(task string) {
 
 func (acs *CommonSubsetImpl) startNewInstance() {
 	acs.Sid = acs.Sid + 1
-	acs.taskPhase = "PB"
+	acs.taskPhase = PB_PHASE
 	acs.inputVectors = make([]Vector, 0)
 
 	logger.Info("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] startNewInstance")
+
+	// Get txs from TxnSet
 	var txs []string
 	for {
 		BatchSize := 2
@@ -314,19 +302,19 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 		time.Sleep(500 * time.Millisecond)
 	}
 
+	// Start Provable Broadcast with proposal
 	proposal, _ := json.Marshal(txs)
 	acs.proposal = proposal
-	// proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
-	// acs.proposalHash = proposalHash
-	// go acs.proBroadcast.startProvableBroadcast(proposalHash, nil, "acs", CheckValue)
-	go acs.proBroadcast.startProvableBroadcast(proposal, nil, "acs", CheckValue)
+	go acs.proBroadcast.startProvableBroadcast(proposal, nil, PB_PHASE, CheckValue)
 }
 
 func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
+	// Ignore messages if the number of messages is sufficient
 	if len(acs.inputVectors) >= 2*acs.Config.F+1 {
 		return
 	}
 
+	// Parse senderId and senderSid of message
 	pbFinal := msg.GetPbFinal()
 	senderId := int(pbFinal.Id)
 	senderSid := int(pbFinal.Sid)
@@ -344,7 +332,8 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		"senderId":  senderId,
 		"senderSid": senderSid,
 	}).Info("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] [ACS] Get PbFinal msg")
-
+	
+	// Parse proposal and signature of message
 	proposalHash := pbFinal.Proposal
 	signature := &tcrsa.Signature{}
 	err := json.Unmarshal(pbFinal.Signature, signature)
@@ -352,6 +341,7 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 	}
 
+	// Verify the signature
 	marshalData := getMsgdata(senderId, senderSid, proposalHash)
 	flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature, marshalData)
 	if err != nil || flag == false {
@@ -359,6 +349,7 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		return
 	}
 
+	// Store the value of message as MVBA's input
 	wVector := Vector{
 		Id:        senderId,
 		Sid:       senderSid,
@@ -367,39 +358,16 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 	}
 	acs.inputVectors = append(acs.inputVectors, wVector)
 
+	// Transmit a pbFinal signal to start MVBA
 	if len(acs.inputVectors) == 2*acs.Config.F+1 {
-		// fmt.Println("")
-		// fmt.Println("---------------- [ACS] -----------------")
-		// fmt.Println("副本：", acs.ID)
-		// for i := 0; i < 2*acs.Config.F+1; i++ {
-		// 	fmt.Println("node: ", acs.inputVectors[i].id)
-		// 	fmt.Println("Sid: ", acs.inputVectors[i].sid)
-		// 	fmt.Println("proposalHashLen: ", len(acs.inputVectors[i].proposal))
-		// }
-		// fmt.Println("[ACS] GOOD WORK!.")
-		// fmt.Println("---------------- [ACS] -----------------")
-		// 需要保证旧实例结束再启动新实例
-		// 不能同时执行新旧实例，代码不允许
-		// 达到新实例的启动条件时，仍然要执行旧实例，不然其他节点可能无法在上一个实例中结束
-		// 也就是说，当节点广播完上一个实例的的pbfinal消息后，才可启动新实例
-		//go acs.startNewInstance()
-		// start a new instance if the conditions are met
-		// acs.msgEndFlag = true
-		// if acs.taskEndFlag == true {
-		// 	acs.restart <- true
-		// }
-		acs.taskSignal <- "pbFinal"
+		go acs.controller("pbFinal")
 	}
 }
 
 func (acs *CommonSubsetImpl) broadcastPbFinal() {
 	signature := acs.proBroadcast.getSignature()
 	marshal, _ := json.Marshal(signature)
-	proposal := acs.proBroadcast.getProposal()
-	proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
-	// marshalData := getMsgdata(int(acs.ID),  acs.Sid, proposal)
-	// proposalHash := SHA256(marshalData)
-	// pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.Sid, proposal, marshal)
+	proposalHash := acs.proBroadcast.getProposalHash()
 	pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.Sid, proposalHash, marshal)
 
 	// broadcast msg
@@ -416,15 +384,16 @@ func CheckValue(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa
 }
 
 func verfiyThld(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool {
+	// Parse signature
 	signature := &tcrsa.Signature{}
 	err := json.Unmarshal(proof, signature)
 	if err != nil {
 		logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 	}
 	
+	// Verify the signature
 	marshalData := getMsgdata(id, sid, proposal)
 	documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, publicKey)
-
 	flag, err := go_hotstuff.TVerify(publicKey, *signature, documentHash)
 	if err != nil || flag == false {
 		logger.WithField("error", err.Error()).Error("verfiy Thld failed.")
@@ -433,6 +402,7 @@ func verfiyThld(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa
 	return true
 }
 
+// Combine these fields in []byte format
 func getMsgdata(senderId int, senderSid int, sednerProposal []byte) []byte {
 	type msgData struct {
 		Id       int
@@ -448,4 +418,3 @@ func getMsgdata(senderId int, senderSid int, sednerProposal []byte) []byte {
 	return marshal
 }
 
-// func CheckMsgSid(currentSid int, msgSid int, msgType )

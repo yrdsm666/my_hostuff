@@ -61,7 +61,6 @@ func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastI
 		complete:        false,
 		// start:  false,
 	}
-	// spb.waitStart = sync.NewCond(&spb.lockStart)
 	return spb
 }
 
@@ -69,20 +68,15 @@ func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastI
 func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []byte) {
 	logger.Info("[replica_" + strconv.Itoa(int(spb.acs.ID)) + "] [sid_" + strconv.Itoa(spb.acs.Sid) + "] [SPB] Start Strong Provable Broadcast")
 
-	spb.acs.taskPhase = "SPB_1"
+	spb.acs.taskPhase = SPB_PHASE_1
 	spb.proposal = proposal
 	// spb.Signature1 = tcrsa.SigShare{}
 	// spb.Signature2 = tcrsa.SigShare{}
 	spb.proBroadcast1 = NewProvableBroadcast(spb.acs)
 	spb.proBroadcast2 = NewProvableBroadcast(spb.acs)
 
-	// spb.lockStart.Lock()
-	// spb.start = true
-	// spb.lockStart.Unlock()
-	// spb.waitStart.Broadcast()
-
 	// deep copy
-	newProposal := bytesAdd(proposal, []byte("SPB_1"))
+	newProposal := bytesAdd(proposal, []byte(SPB_PHASE_1))
 
 	go spb.proBroadcast1.startProvableBroadcast(newProposal, nil, "1", CheckValue)
 }
@@ -90,15 +84,15 @@ func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []
 // func (spb *StrongProvableBroadcastImpl) handleStrongProvableBroadcastMsg(msg *pb.Msg) {
 // 	switch msg.Payload.(type) {
 // 	case *pb.Msg_PbValue:
-// 		if spb.acs.taskPhase == "SPB_1" {
+// 		if spb.acs.taskPhase == SPB_PHASE_1 {
 // 			spb.proBroadcast1.handleProvableBroadcastMsg(msg)
-// 		} else if spb.acs.taskPhase == "SPB_2" {
+// 		} else if spb.acs.taskPhase == SPB_PHASE_2 {
 // 			spb.proBroadcast2.handleProvableBroadcastMsg(msg)
 // 		}
 // 	case *pb.Msg_PbEcho:
-// 		if spb.acs.taskPhase == "SPB_1" {
+// 		if spb.acs.taskPhase == SPB_PHASE_1 {
 // 			spb.proBroadcast1.handleProvableBroadcastMsg(msg)
-// 		} else if spb.acs.taskPhase == "SPB_2" {
+// 		} else if spb.acs.taskPhase == SPB_PHASE_2 {
 // 			spb.proBroadcast2.handleProvableBroadcastMsg(msg)
 // 		}
 // 	}
@@ -114,9 +108,9 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 		marshalData, _ := json.Marshal(signature)
 
 		// deep copy
-		newProposal := bytesAdd(spb.proposal, []byte("SPB_2"))
+		newProposal := bytesAdd(spb.proposal, []byte(SPB_PHASE_2))
 
-		spb.acs.taskPhase = "SPB_2"
+		spb.acs.taskPhase = SPB_PHASE_2
 		go spb.proBroadcast2.startProvableBroadcast(newProposal, marshalData, "2", verfiyThld)
 	}
 	if task == "getPbValue_2" {

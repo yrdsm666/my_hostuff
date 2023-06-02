@@ -92,12 +92,15 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 	if cc.complete == true {
 		return
 	}
+
+	// If common coin has not yet started, wait common coin start
 	cc.lock.Lock()
 	if cc.start == false {
 		logger.Warn("[replica_" + strconv.Itoa(int(cc.acs.ID)) + "] [sid_" + strconv.Itoa(cc.acs.Sid) + "] [CC] wait common coin start")
 		cc.waitstart.Wait()
 	}
 	cc.lock.Unlock()
+
 	switch msg.Payload.(type) {
 	case *pb.Msg_CoinShare:
 		coinShare := msg.GetCoinShare()
@@ -139,7 +142,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 		}
 		break
 	default:
-		logger.Warn("Receive unsupported msg")
+		logger.Warn("[CC] Receive unsupported msg")
 	}
 }
 
