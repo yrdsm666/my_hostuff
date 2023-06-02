@@ -19,7 +19,7 @@ import (
 	pb "github.com/wjbbig/go-hotstuff/proto"
 	//"os"
 	"strconv"
-	//"sync"
+	"sync"
 	// "fmt"
 )
 
@@ -38,17 +38,18 @@ type ProvableBroadcast interface {
 type ProvableBroadcastImpl struct {
 	acs *CommonSubsetImpl
 
-	proposal    []byte
-	proof       []byte
-	valueVerfiy func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool
-	complete    bool
-	invokePhase string // which phase invoke the PB
-	EchoVote     []*tcrsa.SigShare
-	lockVectors  []Vector
-	valueVectors map[int][]byte
-	DocumentHash []byte
-	Signature    tcrsa.Signature
-	lockSet      sync.Mutex
+	proposal      []byte
+	proof         []byte
+	valueVerfiy   func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool
+	complete      bool
+	invokePhase   string // which phase invoke the PB
+	EchoVote      []*tcrsa.SigShare
+	lockVectors   []Vector
+	valueVectors  map[int][]byte
+	DocumentHash  []byte
+	proposalHash  []byte
+	Signature     tcrsa.Signature
+	lockSet       sync.Mutex
 }
 
 func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
@@ -75,13 +76,14 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof 
 	prb.proposal = proposal
 	prb.proof = proof
 
+	// create msg 
 	id := int(prb.acs.ID)
 	pbValueMsg := prb.acs.PbValueMsg(id, prb.acs.Sid, invokePhase, prb.proposal, prb.proof)
 
-	// create msg hash
-	data := getMsgdata(id, prb.acs.Sid, prb.proposal)
+	prb.proposalHash, _ = go_hotstuff.CreateDocumentHash(prb.proposal, prb.acs.Config.PublicKey)
+	data := getMsgdata(id, prb.acs.Sid, prb.proposalHash)
 	prb.DocumentHash, _ = go_hotstuff.CreateDocumentHash(data, prb.acs.Config.PublicKey)
-
+	
 	// broadcast msg
 	err := prb.acs.Broadcast(pbValueMsg)
 	if err != nil {
@@ -128,7 +130,8 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			// verify the proof
 			initProposal := bytesSub(senderProposal, []byte("SPB_2"))
 			newProposal := bytesAdd(initProposal, []byte("SPB_1"))
-			marshalData := getMsgdata(senderId, senderSid, newProposal)
+			proposalHash, _ := go_hotstuff.CreateDocumentHash(newProposal, prb.acs.Config.PublicKey)
+			marshalData := getMsgdata(senderId, senderSid, proposalHash)
 			flag, err := go_hotstuff.TVerify(prb.acs.Config.PublicKey, *proof, marshalData)
 			if err != nil || flag == false {
 				logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(int(prb.acs.Sid)) + "] [PB] pbValue: verfiy proof of SPB_1 failed in SPB_2.")
@@ -150,7 +153,8 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		}
 		
 		// Create threshold signature share
-		marshalData := getMsgdata(senderId, senderSid, senderProposal)
+		proposalHash, _ := go_hotstuff.CreateDocumentHash(senderProposal, prb.acs.Config.PublicKey)
+		marshalData := getMsgdata(senderId, senderSid, proposalHash)
 		documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, prb.acs.Config.PublicKey)
 		partSig, err := go_hotstuff.TSign(documentHash, prb.acs.Config.PrivateKey, prb.acs.Config.PublicKey)
 		if err != nil {
@@ -158,7 +162,8 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		}
 	
 		partSigBytes, _ := json.Marshal(partSig)
-		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, prb.invokePhase, senderProposal, partSigBytes)
+		// pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, prb.invokePhase, senderProposal, partSigBytes)
+		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, prb.invokePhase, proposalHash, partSigBytes)
 		if uint32(senderId) != prb.acs.ID{
 			// reply echo msg to sender
 			err = prb.acs.Unicast(prb.acs.GetNetworkInfo()[uint32(senderId)], pbEchoMsg)
@@ -190,7 +195,8 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 
 		// Ignore messages from other provable broadcast instance
 		senderProposal := pbEchoMsg.Proposal
-		if bytes.Compare(senderProposal, prb.proposal) != 0 {
+		// if bytes.Compare(senderProposal, prb.proposal) != 0 {
+		if bytes.Compare(senderProposal, prb.proposalHash) != 0 {
 			logger.Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get mismatch proposal PbEcho msg")
 			return
 		}

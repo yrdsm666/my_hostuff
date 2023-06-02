@@ -418,6 +418,10 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 			
 			leader := mvba.preLeader[mvba.acs.Sid-1]
 			if leader != finalVector.Id {
+				logger.WithFields(logrus.Fields{
+					"senderId":  senderId,
+					"senderSid": senderSid,
+				}).Warn("[replica_" + strconv.Itoa(int(mvba.acs.ID)) + "] [sid_" + strconv.Itoa(mvba.acs.Sid) + "] [MVBA] leader from halt msg is wrong")
 				return
 			}
 		} else{
@@ -636,7 +640,8 @@ func (mvba *SpeedMvbaImpl) handleSpeedMvbaMsg(msg *pb.Msg) {
 			}
 
 			newProposal :=  bytesAdd(leaderProposal, []byte("SPB_2"))
-			marshalData := getMsgdata(mvba.leader, mvba.acs.Sid, newProposal)
+			proposalHash, _ := go_hotstuff.CreateDocumentHash(newProposal, mvba.acs.Config.PublicKey)
+			marshalData := getMsgdata(mvba.leader, mvba.acs.Sid, proposalHash)
 			documentHash, _ = go_hotstuff.CreateDocumentHash(marshalData, mvba.acs.Config.PublicKey)
 			err = go_hotstuff.VerifyPartSig(partSig, documentHash, mvba.acs.Config.PublicKey)
 			if err != nil {
@@ -816,7 +821,8 @@ func (mvba *SpeedMvbaImpl) broadcastVote(flag int, proposal []byte, signature tc
 	signatureBytes, _ := json.Marshal(signature)
 	if flag == 1 {
 		newProposal :=  bytesAdd(proposal, []byte("SPB_2"))
-		marshalData := getMsgdata(mvba.leader, mvba.acs.Sid, newProposal)
+		proposalHash, _ := go_hotstuff.CreateDocumentHash(newProposal, mvba.acs.Config.PublicKey)
+		marshalData := getMsgdata(mvba.leader, mvba.acs.Sid, proposalHash)
 		documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, mvba.acs.Config.PublicKey)
 		partSig, err := go_hotstuff.TSign(documentHash, mvba.acs.Config.PrivateKey, mvba.acs.Config.PublicKey)
 		if err != nil {
@@ -870,7 +876,8 @@ func BytesToInt(bys []byte) uint64 {
 func verfiySpbSig(id int, sid int, jBytes []byte, proposal []byte, signature tcrsa.Signature, publicKey *tcrsa.KeyMeta) (bool, error) {
 	// deep copy
 	newProposal := bytesAdd(proposal, jBytes)
-	marshalData := getMsgdata(id, sid, newProposal)
+	proposalHash, _ := go_hotstuff.CreateDocumentHash(newProposal, publicKey)
+	marshalData := getMsgdata(id, sid, proposalHash)
 	flag, err := go_hotstuff.TVerify(publicKey, signature, marshalData)
 	if err != nil || flag == false {
 		logger.WithField("error", err.Error()).Error("verfiySpbSig failed.")

@@ -1,7 +1,7 @@
 package sDumbo
 
 import (
-	// "bytes"
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -113,8 +113,8 @@ func (acs *CommonSubsetImpl) handleMsg(msg *pb.Msg) {
 		// send the request to the leader, if the replica is not the leader
 		break
 	case *pb.Msg_PbValue:
-		pbValueMsg := msg.GetPbValue()
-		invokePhase := pbValueMsg.InvokePhase
+		// pbValueMsg := msg.GetPbValue()
+		// invokePhase := pbValueMsg.InvokePhase
 		if acs.taskPhase == "PB" {
 			acs.proBroadcast.handleProvableBroadcastMsg(msg)
 		} else {
@@ -205,6 +205,8 @@ func (acs *CommonSubsetImpl) controller(task string) {
 			logger.WithField("error", err.Error()).Error("Unmarshal res failed.")
 		}
 		fmt.Println("resVectorsLen:", len(resVectors))
+		valueVectors := acs.proBroadcast.getValueVectors()
+		var resTxs []string
 		for _, v := range resVectors {
 			fmt.Printf("type(v): %T", v)
 			fmt.Println("")
@@ -215,6 +217,39 @@ func (acs *CommonSubsetImpl) controller(task string) {
 			rv := hex.EncodeToString(v.Proposal)
 			fmt.Println("proposal: ", rv[len(rv)-100:len(rv)-1])
 		}
+		for _, v := range resVectors {
+			value, ok := valueVectors[v.Id]
+			if ok {
+				valueHash, _ := go_hotstuff.CreateDocumentHash(value, acs.Config.PublicKey)
+				if bytes.Compare(valueHash, v.Proposal) != 0 {
+					logger.WithFields(logrus.Fields{
+						"vId":  v.Id,
+						"vSid": v.Sid,
+						"vProposal": hex.EncodeToString(v.Proposal),
+						"valueHash": hex.EncodeToString(valueHash),
+					}).Error("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(acs.Sid) + "] [ACS] The mvba result is not Hash of value proposal!")
+					return
+				}
+				var txs []string
+				err := json.Unmarshal(value, &txs)
+				if err != nil {
+					logger.WithField("error", err.Error()).Error("Unmarshal value failed.")
+				}
+				fmt.Println("len(txs):",len(txs))
+				resTxs = append(resTxs, txs...)
+			} else {
+				fmt.Println("loss value!")
+			}
+			// fmt.Printf("type(v): %T", v)
+			// fmt.Println("")
+			// fmt.Println("pnode: ", v.Id)
+			// fmt.Println("pSid: ", v.Sid)
+			// fmt.Println("proposalLen: ", len(v.Proposal))
+			// fmt.Println("sigHashLen: ", len(v.Signature))
+			// rv := hex.EncodeToString(v.Proposal)
+			// fmt.Println("proposal: ", rv[len(rv)-100:len(rv)-1])
+		}
+		fmt.Println("resTxs:", resTxs)
 		fmt.Println(" GOOD WORK!.")
 		fmt.Println("---------------- [END_2] -----------------")
 	case "restartWithLeaderProposal":
@@ -310,14 +345,14 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		"senderSid": senderSid,
 	}).Info("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] [ACS] Get PbFinal msg")
 
-	senderProposal := pbFinal.Proposal
+	proposalHash := pbFinal.Proposal
 	signature := &tcrsa.Signature{}
 	err := json.Unmarshal(pbFinal.Signature, signature)
 	if err != nil {
 		logger.WithField("error", err.Error()).Error("Unmarshal signature failed.")
 	}
 
-	marshalData := getMsgdata(senderId, senderSid, senderProposal)
+	marshalData := getMsgdata(senderId, senderSid, proposalHash)
 	flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature, marshalData)
 	if err != nil || flag == false {
 		logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] [ACS] verfiy signature from PbFinal failed.")
@@ -327,7 +362,7 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 	wVector := Vector{
 		Id:        senderId,
 		Sid:       senderSid,
-		Proposal:  senderProposal,
+		Proposal:  proposalHash,
 		Signature: *signature,
 	}
 	acs.inputVectors = append(acs.inputVectors, wVector)
@@ -362,6 +397,8 @@ func (acs *CommonSubsetImpl) broadcastPbFinal() {
 	marshal, _ := json.Marshal(signature)
 	proposal := acs.proBroadcast.getProposal()
 	proposalHash, _ := go_hotstuff.CreateDocumentHash(proposal, acs.Config.PublicKey)
+	// marshalData := getMsgdata(int(acs.ID),  acs.Sid, proposal)
+	// proposalHash := SHA256(marshalData)
 	// pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.Sid, proposal, marshal)
 	pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.Sid, proposalHash, marshal)
 
