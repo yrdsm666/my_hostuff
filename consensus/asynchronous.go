@@ -24,7 +24,7 @@ type Asynchronous interface {
 	SafeExit()
 	Broadcast(msg *pb.Msg) error
 	Unicast(address string, msg *pb.Msg) error
-
+	ProcessProposal(cmds []string) error
 
 	PbValueMsg(id int, sid int, invokePhase string, proposal []byte, proof []byte) *pb.Msg
 	PbEchoMsg(id int, sid int, invokePhase string, proposal []byte, partialSig []byte) *pb.Msg
@@ -129,6 +129,20 @@ func (a *AsynchronousImpl) Unicast(address string, msg *pb.Msg) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func (a *AsynchronousImpl) ProcessProposal(cmds []string) error {
+	for _, cmd := range cmds {
+		// result := a.ProcessMethod(cmd)
+		// msg := &pb.Msg{Payload: &pb.Msg_Reply{Reply: &pb.Reply{Result: result, Command: cmd}}}
+		msg := &pb.Msg{Payload: &pb.Msg_Reply{Reply: &pb.Reply{Result: "100", Command: cmd}}}
+		err := a.Unicast("localhost:9999", msg)
+		if err != nil {
+			return err
+		}
+	}
+	a.TxnSet.Remove(cmds...)
 	return nil
 }
 

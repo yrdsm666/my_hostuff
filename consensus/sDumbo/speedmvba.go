@@ -104,7 +104,6 @@ func (mvba *SpeedMvbaImpl) startSpeedMvba(proposal []byte) {
 
 	mvba.spb = NewStrongProvableBroadcast(mvba.acs)
 	mvba.cc = NewCommonCoin(mvba.acs)
-	mvba.acs.taskPhase = SPB_PHASE_1
 
 	mvba.lockStart.Lock()
 	mvba.start = true

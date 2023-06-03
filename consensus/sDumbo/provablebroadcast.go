@@ -31,7 +31,7 @@ type ProvableBroadcast interface {
 	getProposalHash() []byte
 	getStatus() bool
 	getLockVectors() []Vector
-	getValueVectors() map[int][]byte
+	// getValueVectors() map[int][]byte
 }
 
 type ProvableBroadcastImpl struct {
@@ -44,7 +44,7 @@ type ProvableBroadcastImpl struct {
 	invokePhase   string // which phase invoke the PB
 	EchoVote      []*tcrsa.SigShare
 	lockVectors   []Vector
-	valueVectors  map[int][]byte
+	// valueVectors  map[int][]byte
 	DocumentHash  []byte
 	proposalHash  []byte
 	Signature     tcrsa.Signature
@@ -66,7 +66,7 @@ func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 	// 假设 valueVectors 在 startProvableBroadcast 函数中被初始化，
 	// 此时如果在 startProvableBroadcast 之前接收到了 pbvalue 消息，
 	// 那么 pbvalue 消息的值不会被存储进入 valueVectors
-	prb.valueVectors = make(map[int][]byte)
+	// prb.valueVectors = make(map[int][]byte)
 	return prb
 }
 
@@ -158,12 +158,19 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		}
 
 		// Collect PB values in ACS
-		if invokePhase == PB_PHASE {
-			prb.valueVectors[senderId] = senderProposal
+		if invokePhase == PB_PHASE && senderSid >= prb.acs.Sid{
+			_, ok := prb.acs.valueVectors[senderSid]
+			if !ok {
+				sidValueVectors := make(map[int][]byte)
+				prb.acs.valueVectors[senderSid] = sidValueVectors
+			}
+			prb.acs.valueVectors[senderSid][senderId] = senderProposal
 			logger.WithFields(logrus.Fields{
 				"senderId":  senderId,
 				"senderSid": senderSid,
 				"len(senderProposal):": len(senderProposal),
+				"len(valueVectors):": len(prb.acs.valueVectors),
+				"len(valueVectors[senderSid]):": len(prb.acs.valueVectors[senderSid]),
 			}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Save value of PbValue msg")
 		}
 		
@@ -296,7 +303,7 @@ func (prb *ProvableBroadcastImpl) getLockVectors() []Vector {
 	return prb.lockVectors
 }
 
-func (prb *ProvableBroadcastImpl) getValueVectors() map[int][]byte {
-	return prb.valueVectors
-}
+// func (prb *ProvableBroadcastImpl) getValueVectors() map[int][]byte {
+// 	return prb.valueVectors
+// }
 

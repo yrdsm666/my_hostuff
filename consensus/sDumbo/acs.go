@@ -41,6 +41,9 @@ type CommonSubsetImpl struct {
 	mvba         SpeedMvba
 
 	inputVectors []Vector
+
+	valueVectors map[int]map[int][]byte
+	startSid     int
 }
 
 const (
@@ -86,6 +89,7 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 
 	acs.TxnSet = go_hotstuff.NewCmdSet()
 
+	acs.valueVectors = make(map[int]map[int][]byte)
 	acs.proBroadcast = NewProvableBroadcast(acs)
 	acs.mvba = NewSpeedMvba(acs)
 
@@ -197,7 +201,8 @@ func (acs *CommonSubsetImpl) controller(task string) {
 			logger.WithField("error", err.Error()).Error("Unmarshal res failed.")
 		}
 		fmt.Println("resVectorsLen:", len(resVectors))
-		valueVectors := acs.proBroadcast.getValueVectors()
+		// valueVectors := acs.proBroadcast.getValueVectors()
+		valueVectors := acs.valueVectors[acs.startSid]
 		var resTxs []string
 		// for _, v := range resVectors {
 		// 	fmt.Printf("type(v): %T", v)
@@ -236,8 +241,16 @@ func (acs *CommonSubsetImpl) controller(task string) {
 			
 		}
 		fmt.Println("resTxs:", resTxs)
+		err = acs.ProcessProposal(resTxs)
+		if err != nil {
+			logger.WithField("error", err.Error()).Error("echo client failed.")
+		}
 		fmt.Println(" GOOD WORK!.")
 		fmt.Println("---------------- [END_2] -----------------")
+
+		if acs.Sid < 10{
+			go acs.startNewInstance()
+		} 
 	case "restartWithLeaderProposal":
 		fmt.Println("")
 		fmt.Println("replica: ", acs.ID)
@@ -287,7 +300,16 @@ func (acs *CommonSubsetImpl) controller(task string) {
 func (acs *CommonSubsetImpl) startNewInstance() {
 	acs.Sid = acs.Sid + 1
 	acs.taskPhase = PB_PHASE
+
+	// sidValueVectors := make(map[int][]byte)
+	// acs.valueVectors[acs.Sid] = sidValueVectors
+	_, ok := acs.valueVectors[acs.startSid]
+	if ok {
+		delete(acs.valueVectors, acs.startSid)
+	}
 	acs.inputVectors = make([]Vector, 0)
+
+	acs.startSid = acs.Sid
 
 	logger.Info("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] startNewInstance")
 

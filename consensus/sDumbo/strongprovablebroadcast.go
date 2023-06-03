@@ -68,12 +68,12 @@ func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastI
 func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []byte) {
 	logger.Info("[replica_" + strconv.Itoa(int(spb.acs.ID)) + "] [sid_" + strconv.Itoa(spb.acs.Sid) + "] [SPB] Start Strong Provable Broadcast")
 
-	spb.acs.taskPhase = SPB_PHASE_1
 	spb.proposal = proposal
 	// spb.Signature1 = tcrsa.SigShare{}
 	// spb.Signature2 = tcrsa.SigShare{}
 	spb.proBroadcast1 = NewProvableBroadcast(spb.acs)
 	spb.proBroadcast2 = NewProvableBroadcast(spb.acs)
+	spb.acs.taskPhase = SPB_PHASE_1
 
 	// deep copy
 	newProposal := bytesAdd(proposal, []byte(SPB_PHASE_1))
