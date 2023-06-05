@@ -31,22 +31,26 @@ type ProvableBroadcast interface {
 	getProposalHash() []byte
 	getStatus() bool
 	getLockVectors() []Vector
-	// getValueVectors() map[int][]byte
 }
 
 type ProvableBroadcastImpl struct {
 	acs *CommonSubsetImpl
 
-	proposal    []byte
-	proof       []byte
-	valueVerfiy func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool
-	complete    bool
-	invokePhase string // which phase invoke the PB
-	EchoVote    []*tcrsa.SigShare
-	lockVectors []Vector
-	// valueVectors  map[int][]byte
-	DocumentHash []byte
+	complete     bool
+
+	// the Provable Broadcast information
+	proposal     []byte
+	proof        []byte
 	proposalHash []byte
+	DocumentHash []byte
+	
+	invokePhase  string // which phase invoke the PB
+	valueVerfiy  func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool
+	
+	EchoVote     []*tcrsa.SigShare
+	lockVectors  []Vector
+	
+	
 	Signature    tcrsa.Signature
 	lockSet      sync.Mutex
 }
@@ -70,6 +74,11 @@ func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 	return prb
 }
 
+
+// proposal: Provable Broadcast proposal
+// proof: proof of proposal
+// invokePhase: identify which phase called PB
+// valueValidation: external validation function
 func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof []byte, invokePhase string, valueValidation func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool) {
 	logger.Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Start Provable Broadcast " + invokePhase)
 
@@ -298,6 +307,3 @@ func (prb *ProvableBroadcastImpl) getLockVectors() []Vector {
 	return prb.lockVectors
 }
 
-// func (prb *ProvableBroadcastImpl) getValueVectors() map[int][]byte {
-// 	return prb.valueVectors
-// }

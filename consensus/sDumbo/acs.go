@@ -30,14 +30,14 @@ var logger = logging.GetLogger()
 type CommonSubsetImpl struct {
 	consensus.AsynchronousImpl
 
-	Sid      int
-	proposal []byte
+	Sid        int
+	proposal   []byte
 	// proposalHash []byte
 	cancel     context.CancelFunc
 	taskSignal chan string
 	taskPhase  string
 
-	// acs components
+	// ACS components
 	proBroadcast ProvableBroadcast
 	mvba         SpeedMvba
 
@@ -71,32 +71,36 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 		cancel: cancel,
 	}
 
-	msgEntrance := make(chan *pb.Msg)
-	taskSignal := make(chan string)
-	acs.MsgEntrance = msgEntrance
-	acs.taskSignal = taskSignal
+	acs.MsgEntrance = make(chan *pb.Msg)
+	acs.taskSignal = make(chan string)
 	acs.ID = uint32(id)
+
+	// create txn cache
+	acs.TxnSet = go_hotstuff.NewCmdSet()
 	logger.WithField("replicaID", id).Debug("[ACS] Init command cache.")
 
 	// read config
 	acs.Config = config.HotStuffConfig{}
 	acs.Config.ReadConfig()
 
+	// read private key
 	privateKey, err := go_hotstuff.ReadThresholdPrivateKeyFromFile(acs.GetSelfInfo().PrivateKey)
 	if err != nil {
 		logger.Fatal(err)
 	}
 	acs.Config.PrivateKey = privateKey
 
-	acs.TxnSet = go_hotstuff.NewCmdSet()
-
-	acs.valueVectors = make(map[int]map[int][]byte)
+	// create ACS components
 	acs.proBroadcast = NewProvableBroadcast(acs)
 	acs.mvba = NewSpeedMvba(acs)
+
+	// create sDumbo input value cache
+	acs.valueVectors = make(map[int]map[int][]byte)
 
 	go acs.receiveTaskSignal(ctx)
 	go acs.receiveMsg(ctx)
 
+	// start ACS
 	go acs.controller("start")
 
 	return acs
@@ -167,6 +171,7 @@ func (acs *CommonSubsetImpl) receiveTaskSignal(ctx context.Context) {
 func (acs *CommonSubsetImpl) controller(task string) {
 	switch task {
 	case "start":
+		// start new ACS instance
 		go acs.startNewInstance()
 	case "getPbValue_" + PB_PHASE:
 		acs.broadcastPbFinal()
@@ -301,14 +306,14 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 	acs.Sid = acs.Sid + 1
 	acs.taskPhase = PB_PHASE
 
-	// sidValueVectors := make(map[int][]byte)
-	// acs.valueVectors[acs.Sid] = sidValueVectors
+	// Clear the value cache from old sids
 	_, ok := acs.valueVectors[acs.startSid]
 	if ok {
 		delete(acs.valueVectors, acs.startSid)
 	}
-	acs.inputVectors = make([]Vector, 0)
 
+	// Init mvba status
+	acs.inputVectors = make([]Vector, 0)
 	acs.startSid = acs.Sid
 
 	logger.Info("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] startNewInstance")
@@ -317,8 +322,8 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 	var txs []string
 	for {
 		BatchSize := 2
-		txs = acs.TxnSet.GetFirst(BatchSize) //int(ehs.Config.BatchSize)，取前两个元素
-		if len(txs) == BatchSize {           //如果txs为nil，会报错吗？
+		txs = acs.TxnSet.GetFirst(BatchSize) // Get the first BatchSize elements
+		if len(txs) == BatchSize {           // 如果txs为nil，会报错吗？
 			break
 		}
 		time.Sleep(500 * time.Millisecond)
