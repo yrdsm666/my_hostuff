@@ -37,18 +37,18 @@ type ProvableBroadcast interface {
 type ProvableBroadcastImpl struct {
 	acs *CommonSubsetImpl
 
-	proposal      []byte
-	proof         []byte
-	valueVerfiy   func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool
-	complete      bool
-	invokePhase   string // which phase invoke the PB
-	EchoVote      []*tcrsa.SigShare
-	lockVectors   []Vector
+	proposal    []byte
+	proof       []byte
+	valueVerfiy func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool
+	complete    bool
+	invokePhase string // which phase invoke the PB
+	EchoVote    []*tcrsa.SigShare
+	lockVectors []Vector
 	// valueVectors  map[int][]byte
-	DocumentHash  []byte
-	proposalHash  []byte
-	Signature     tcrsa.Signature
-	lockSet       sync.Mutex
+	DocumentHash []byte
+	proposalHash []byte
+	Signature    tcrsa.Signature
+	lockSet      sync.Mutex
 }
 
 func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
@@ -59,7 +59,7 @@ func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 	// NOTES:
 	// valueVectors needs to be initialized as early as possible.
 	// Assuming valueVectors is initialized in the startProvableBroadcast function,
-	// if a pbvalue message is received before starting Provable Broadcast, 
+	// if a pbvalue message is received before starting Provable Broadcast,
 	// the value of pbvalue message will not be stored in valueVectors.
 	// 注意：
 	// valueVectors 需要尽可能早的初始化。
@@ -85,14 +85,14 @@ func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof 
 	prb.proposal = proposal
 	prb.proof = proof
 
-	// create msg 
+	// create msg
 	id := int(prb.acs.ID)
 	pbValueMsg := prb.acs.PbValueMsg(id, prb.acs.Sid, invokePhase, prb.proposal, prb.proof)
 
 	prb.proposalHash, _ = go_hotstuff.CreateDocumentHash(prb.proposal, prb.acs.Config.PublicKey)
 	data := getMsgdata(id, prb.acs.Sid, prb.proposalHash)
 	prb.DocumentHash, _ = go_hotstuff.CreateDocumentHash(data, prb.acs.Config.PublicKey)
-	
+
 	// broadcast msg
 	err := prb.acs.Broadcast(pbValueMsg)
 	if err != nil {
@@ -158,22 +158,17 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		}
 
 		// Collect PB values in ACS
-		if invokePhase == PB_PHASE && senderSid >= prb.acs.Sid{
-			_, ok := prb.acs.valueVectors[senderSid]
-			if !ok {
-				sidValueVectors := make(map[int][]byte)
-				prb.acs.valueVectors[senderSid] = sidValueVectors
-			}
-			prb.acs.valueVectors[senderSid][senderId] = senderProposal
+		if invokePhase == PB_PHASE && senderSid >= prb.acs.Sid {
+			prb.acs.insertValue(senderId, senderSid, senderProposal)
 			logger.WithFields(logrus.Fields{
-				"senderId":  senderId,
-				"senderSid": senderSid,
-				"len(senderProposal):": len(senderProposal),
-				"len(valueVectors):": len(prb.acs.valueVectors),
+				"senderId":                      senderId,
+				"senderSid":                     senderSid,
+				"len(senderProposal):":          len(senderProposal),
+				"len(valueVectors):":            len(prb.acs.valueVectors),
 				"len(valueVectors[senderSid]):": len(prb.acs.valueVectors[senderSid]),
 			}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Save value of PbValue msg")
 		}
-		
+
 		// Create threshold signature share
 		// Perform threshold signature on the proposed Hash
 		proposalHash, _ := go_hotstuff.CreateDocumentHash(senderProposal, prb.acs.Config.PublicKey)
@@ -183,17 +178,17 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbValue: create the partial signature failed.")
 		}
-		
-		// create msg 
+
+		// create msg
 		partSigBytes, _ := json.Marshal(partSig)
 		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, prb.invokePhase, proposalHash, partSigBytes)
-		if uint32(senderId) != prb.acs.ID{
+		if uint32(senderId) != prb.acs.ID {
 			// reply echo msg to sender
 			err = prb.acs.Unicast(prb.acs.GetNetworkInfo()[uint32(senderId)], pbEchoMsg)
 			if err != nil {
 				logger.WithField("error", err.Error()).Error("Unicast failed.")
 			}
-		} else{
+		} else {
 			// echo self
 			prb.acs.MsgEntrance <- pbEchoMsg
 		}
@@ -203,7 +198,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		if len(prb.EchoVote) >= 2*prb.acs.Config.F+1 {
 			return
 		}
-		
+
 		pbEchoMsg := msg.GetPbEcho()
 		senderSid := int(pbEchoMsg.Sid)
 
@@ -227,7 +222,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			"senderId":  int(pbEchoMsg.Id),
 			"senderSid": senderSid,
 		}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get pbEcho msg")
-		
+
 		// get the partSig form message
 		partSig := &tcrsa.SigShare{}
 		err := json.Unmarshal(pbEchoMsg.PartialSig, partSig)
@@ -239,10 +234,10 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		err = go_hotstuff.VerifyPartSig(partSig, prb.DocumentHash, prb.acs.Config.PublicKey)
 		if err != nil {
 			logger.WithFields(logrus.Fields{
-				"error":        err.Error(),
+				"error":          err.Error(),
 				"mydocumentHash": hex.EncodeToString(prb.DocumentHash),
-				"senderId":  int(pbEchoMsg.Id),
-				"senderSid": senderSid,
+				"senderId":       int(pbEchoMsg.Id),
+				"senderSid":      senderSid,
 			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: signature share not verified!")
 			return
 		}
@@ -306,4 +301,3 @@ func (prb *ProvableBroadcastImpl) getLockVectors() []Vector {
 // func (prb *ProvableBroadcastImpl) getValueVectors() map[int][]byte {
 // 	return prb.valueVectors
 // }
-

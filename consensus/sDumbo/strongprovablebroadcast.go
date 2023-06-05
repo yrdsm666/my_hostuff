@@ -18,7 +18,6 @@ import (
 
 	// "os"
 	"strconv"
-	"sync"
 	// "fmt"
 )
 
@@ -40,7 +39,7 @@ type StrongProvableBroadcastImpl struct {
 	acs *CommonSubsetImpl
 
 	proposal []byte
-	complete      bool
+	complete bool
 	// start         bool
 	proBroadcast1 ProvableBroadcast
 	proBroadcast2 ProvableBroadcast
@@ -51,14 +50,14 @@ type StrongProvableBroadcastImpl struct {
 	Signature1    tcrsa.Signature
 	Signature2    tcrsa.Signature
 
-	lockStart     sync.Mutex
-	waitStart     *sync.Cond
+	// lockStart     sync.Mutex
+	// waitStart     *sync.Cond
 }
 
 func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastImpl {
 	spb := &StrongProvableBroadcastImpl{
-		acs: acs,
-		complete:        false,
+		acs:      acs,
+		complete: false,
 		// start:  false,
 	}
 	return spb
@@ -99,7 +98,7 @@ func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []
 // }
 
 func (spb *StrongProvableBroadcastImpl) controller(task string) {
-	if spb.complete == true{
+	if spb.complete {
 		return
 	}
 	if task == "getPbValue_1" {
@@ -125,7 +124,7 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 }
 
 func (spb *StrongProvableBroadcastImpl) getSignature1() tcrsa.Signature {
-	if spb.proBroadcast1.getStatus() == false {
+	if !spb.proBroadcast1.getStatus() {
 		logger.Error("[replica_" + strconv.Itoa(int(spb.acs.ID)) + "] [sid_" + strconv.Itoa(spb.acs.Sid) + "] [SPB] Provable Broadcast 1 is not complet")
 		return nil
 	}
@@ -133,7 +132,7 @@ func (spb *StrongProvableBroadcastImpl) getSignature1() tcrsa.Signature {
 }
 
 func (spb *StrongProvableBroadcastImpl) getSignature2() tcrsa.Signature {
-	if spb.proBroadcast2.getStatus() == false {
+	if !spb.proBroadcast2.getStatus() {
 		logger.Error("[replica_" + strconv.Itoa(int(spb.acs.ID)) + "] [sid_" + strconv.Itoa(spb.acs.Sid) + "] [SPB] Provable Broadcast 2 is not complet")
 		return nil
 	}
@@ -155,5 +154,3 @@ func (spb *StrongProvableBroadcastImpl) getProvableBroadcast1() ProvableBroadcas
 func (spb *StrongProvableBroadcastImpl) getProvableBroadcast2() ProvableBroadcast {
 	return spb.proBroadcast2
 }
-
-
