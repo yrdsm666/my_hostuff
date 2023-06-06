@@ -30,7 +30,8 @@ var logger = logging.GetLogger()
 type CommonSubsetImpl struct {
 	consensus.AsynchronousImpl
 
-	Sid        int
+	// Sid        int
+	round      int
 	proposal   []byte
 	// proposalHash []byte
 	cancel     context.CancelFunc
@@ -44,7 +45,8 @@ type CommonSubsetImpl struct {
 	inputVectors []Vector
 
 	valueVectors map[int]map[int][]byte
-	startSid     int
+	msgCache     map[int]map[int][]*pb.Msg
+	// startSid     int
 }
 
 const (
@@ -58,6 +60,7 @@ const (
 // only variables with uppercase letters can be converted to JSON
 type Vector struct {
 	Id        int
+	Round     int
 	Sid       int
 	Proposal  []byte
 	Signature tcrsa.Signature
@@ -67,7 +70,7 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	logger.Debugf("[ACS] Start Common Subset.")
 	ctx, cancel := context.WithCancel(context.Background())
 	acs := &CommonSubsetImpl{
-		Sid:    0,
+		round:    0,
 		cancel: cancel,
 	}
 
@@ -94,8 +97,12 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	acs.proBroadcast = NewProvableBroadcast(acs)
 	acs.mvba = NewSpeedMvba(acs)
 
-	// create sDumbo input value cache
+	// create sDumbo input value cache and msg cache
+	// valueVectors: round -> id -> []byte
 	acs.valueVectors = make(map[int]map[int][]byte)
+
+	// msgCache: round -> sid -> []*pb.Ms
+	acs.msgCache = make(map[int]map[int][]*pb.Msg)
 
 	go acs.receiveTaskSignal(ctx)
 	go acs.receiveMsg(ctx)
@@ -194,8 +201,9 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		fmt.Println("---------------- [END_1] -----------------")
 		vector := acs.mvba.getLeaderVector()
 		fmt.Println("副本：", acs.ID)
-		fmt.Println("副本sid: ", acs.Sid)
+		fmt.Println("副本round: ", acs.round)
 		fmt.Println("leader: ", vector.Id)
+		fmt.Println("leaderRound: ", vector.Round)
 		fmt.Println("leaderSid: ", vector.Sid)
 		res := hex.EncodeToString(vector.Proposal)
 		fmt.Println("partProposal: ", res[len(res)-100:len(res)-1])
@@ -207,7 +215,7 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		}
 		fmt.Println("resVectorsLen:", len(resVectors))
 		// valueVectors := acs.proBroadcast.getValueVectors()
-		valueVectors := acs.valueVectors[acs.startSid]
+		valueVectors := acs.valueVectors[acs.round]
 		var resTxs []string
 		// for _, v := range resVectors {
 		// 	fmt.Printf("type(v): %T", v)
@@ -229,7 +237,7 @@ func (acs *CommonSubsetImpl) controller(task string) {
 						"vSid":      v.Sid,
 						"vProposal": hex.EncodeToString(v.Proposal),
 						"valueHash": hex.EncodeToString(valueHash),
-					}).Error("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(acs.Sid) + "] [ACS] The mvba result is not Hash of value proposal!")
+					}).Error("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] The mvba result is not Hash of value proposal!")
 					continue
 				}
 				var txs []string
@@ -253,70 +261,78 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		fmt.Println(" GOOD WORK!.")
 		fmt.Println("---------------- [END_2] -----------------")
 
-		if acs.Sid < 10 {
-			go acs.startNewInstance()
-		}
-	case "restartWithLeaderProposal":
-		fmt.Println("")
-		fmt.Println("replica: ", acs.ID)
-		fmt.Println("sid: ", acs.Sid)
-		fmt.Println("---------------- [NEXT_l_1] -----------------")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                 restart                   -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                 leader                    -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("---------------- [NEXT_l_2] -----------------")
-		vector := acs.mvba.getLeaderVector()
-		acs.Sid = acs.Sid + 1
-		go acs.mvba.startSpeedMvba(vector.Proposal)
-	case "restart":
-		fmt.Println("")
-		fmt.Println("replica: ", acs.ID)
-		fmt.Println("sid: ", acs.Sid)
-		fmt.Println("---------------- [NEXT_l_1] -----------------")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                 restart                   -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                  owner                    -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("-                                           -")
-		fmt.Println("---------------- [NEXT_l_2] -----------------")
-		proposal := acs.mvba.getProposal()
-		acs.Sid = acs.Sid + 1
-		//signature := acs.mvba.getSignature()
-		go acs.mvba.startSpeedMvba(proposal)
+		// if acs.round < 10 {
+		// 	go acs.startNewInstance()
+		// }
+	// case "restartWithLeaderProposal":
+	// 	fmt.Println("")
+	// 	fmt.Println("replica: ", acs.ID)
+	// 	fmt.Println("sid: ", acs.Sid)
+	// 	fmt.Println("---------------- [NEXT_l_1] -----------------")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                 restart                   -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                 leader                    -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("---------------- [NEXT_l_2] -----------------")
+	// 	vector := acs.mvba.getLeaderVector()
+	// 	acs.Sid = acs.Sid + 1
+	// 	go acs.mvba.startSpeedMvba(vector.Proposal)
+	// case "restart":
+	// 	fmt.Println("")
+	// 	fmt.Println("replica: ", acs.ID)
+	// 	fmt.Println("sid: ", acs.Sid)
+	// 	fmt.Println("---------------- [NEXT_l_1] -----------------")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                 restart                   -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                  owner                    -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("-                                           -")
+	// 	fmt.Println("---------------- [NEXT_l_2] -----------------")
+	// 	proposal := acs.mvba.getProposal()
+	// 	acs.Sid = acs.Sid + 1
+	// 	//signature := acs.mvba.getSignature()
+	// 	go acs.mvba.startSpeedMvba(proposal)
 	default:
 		logger.Warn("Receive unsupported task signal")
 	}
 }
 
 func (acs *CommonSubsetImpl) startNewInstance() {
-	acs.Sid = acs.Sid + 1
+	acs.round = acs.round + 1
 	acs.taskPhase = PB_PHASE
 
 	// Clear the value cache from old sids
-	_, ok := acs.valueVectors[acs.startSid]
+	_, ok := acs.valueVectors[acs.round-1]
 	if ok {
-		delete(acs.valueVectors, acs.startSid)
+		delete(acs.valueVectors, acs.round-1)
 	}
+
+	logger.Info("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] startNewInstance")
 
 	// Init mvba status
 	acs.inputVectors = make([]Vector, 0)
-	acs.startSid = acs.Sid
 
-	logger.Info("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] startNewInstance")
+	// Handle msg from msg cache
+	msgList := acs.getMsgFromCache(acs.round, 0)
+	if msgList != nil {
+		logger.Warn("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [MVBA] Handle msg from msg cache")
+		for _, msg := range msgList {
+			acs.handleMsg(msg)
+		}
+	}
 
 	// Get txs from TxnSet
 	var txs []string
@@ -332,7 +348,7 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 	// Start Provable Broadcast with proposal
 	proposal, _ := json.Marshal(txs)
 	acs.proposal = proposal
-	go acs.proBroadcast.startProvableBroadcast(proposal, nil, PB_PHASE, CheckValue)
+	go acs.proBroadcast.startProvableBroadcast(proposal, nil, 0, PB_PHASE, CheckValue)
 }
 
 func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
@@ -344,24 +360,32 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 	// Parse senderId and senderSid of message
 	pbFinal := msg.GetPbFinal()
 	senderId := int(pbFinal.Id)
-	senderSid := int(pbFinal.Sid)
+	senderRound := int(pbFinal.Round)
 
-	// Ignore messages from other sid
-	if senderSid != acs.Sid {
+	if senderRound < acs.round {
+		// Ignore messages from old sid or round
 		logger.WithFields(logrus.Fields{
 			"senderId":  senderId,
-			"senderSid": senderSid,
-		}).Warn("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(acs.Sid) + "] [ACS] Get unmatched sid of Pbfinal msg")
+			"senderRound":  senderRound,
+		}).Warn("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get old sid of Pbfinal msg")
+		return
+	} else if senderRound > acs.round {
+		// Save messages from future sid or round
+		acs.insertMsg(senderRound, 0, msg)
+		logger.WithFields(logrus.Fields{
+			"senderId":  senderId,
+			"senderRound":  senderRound,
+		}).Warn("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get future sid of Pbfinal msg and save it")
 		return
 	}
 
 	logger.WithFields(logrus.Fields{
 		"senderId":  senderId,
-		"senderSid": senderSid,
-	}).Info("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] [ACS] Get PbFinal msg")
+		"senderRound":  senderRound,
+	}).Info("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get PbFinal msg")
 
 	// Parse proposal and signature of message
-	proposalHash := pbFinal.Proposal
+	proposal := pbFinal.Proposal
 	signature := &tcrsa.Signature{}
 	err := json.Unmarshal(pbFinal.Signature, signature)
 	if err != nil {
@@ -369,18 +393,18 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 	}
 
 	// Verify the signature
-	marshalData := getMsgdata(senderId, senderSid, proposalHash)
+	marshalData := getMsgdata(senderId, senderRound, 0, proposal)
 	flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature, marshalData)
 	if err != nil || !flag {
-		logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(acs.ID)) + "] [sid_" + strconv.Itoa(int(acs.Sid)) + "] [ACS] verfiy signature from PbFinal failed.")
+		logger.WithField("error", err.Error()).Error("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] verfiy signature from PbFinal failed.")
 		return
 	}
 
 	// Store the value of message as MVBA's input
 	wVector := Vector{
 		Id:        senderId,
-		Sid:       senderSid,
-		Proposal:  proposalHash,
+		Round:     senderRound,
+		Proposal:  proposal,
 		Signature: *signature,
 	}
 	acs.inputVectors = append(acs.inputVectors, wVector)
@@ -395,7 +419,7 @@ func (acs *CommonSubsetImpl) broadcastPbFinal() {
 	signature := acs.proBroadcast.getSignature()
 	marshal, _ := json.Marshal(signature)
 	proposalHash := acs.proBroadcast.getProposalHash()
-	pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.Sid, proposalHash, marshal)
+	pbFinalMsg := acs.PbFinalMsg(int(acs.ID), acs.round, proposalHash, marshal)
 
 	// broadcast msg
 	err := acs.Broadcast(pbFinalMsg)
@@ -406,23 +430,52 @@ func (acs *CommonSubsetImpl) broadcastPbFinal() {
 	acs.MsgEntrance <- pbFinalMsg
 }
 
-func (acs *CommonSubsetImpl) insertValue(senderId int, senderSid int, senderProposal []byte) {
-	_, ok := acs.valueVectors[senderSid]
+func (acs *CommonSubsetImpl) insertValue(senderRound int, senderId int, senderProposal []byte) {
+	_, ok := acs.valueVectors[senderRound]
 	if !ok {
-		sidValueVectors := make(map[int][]byte)
-		acs.valueVectors[senderSid] = sidValueVectors
+		roundValueVectors := make(map[int][]byte)
+		acs.valueVectors[senderRound] = roundValueVectors
 	}
-	_, ok = acs.valueVectors[senderSid][senderId]
+	_, ok = acs.valueVectors[senderRound][senderId]
 	if !ok {
-		acs.valueVectors[senderSid][senderId] = senderProposal
+		acs.valueVectors[senderRound][senderId] = senderProposal
 	}
 }
 
-func CheckValue(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool {
+func (acs *CommonSubsetImpl) insertMsg(senderRound int, senderSid int, msg *pb.Msg) {
+	_, ok := acs.msgCache[senderRound]
+	if !ok {
+		roundMsgCache := make(map[int][]*pb.Msg)
+		acs.msgCache[senderRound] = roundMsgCache
+	}
+	msgList, ok := acs.msgCache[senderRound][senderSid]
+	if !ok {
+		initMsgList := []*pb.Msg{msg}
+		acs.msgCache[senderRound][senderSid] = initMsgList
+	} else {
+		msgList = append(msgList, msg)
+	}
+}
+
+func (acs *CommonSubsetImpl) getMsgFromCache(round int, sid int) []*pb.Msg {
+	roundMsgCache, ok := acs.msgCache[round]
+	if !ok {
+		return nil
+	}
+	msgList, ok := roundMsgCache[sid]
+	if !ok {
+		return nil
+	} else {
+		delete(acs.msgCache[round], sid)
+		return msgList
+	}
+}
+
+func CheckValue(id int, round int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool {
 	return true
 }
 
-func verfiyThld(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool {
+func verfiyThld(id int, round int, sid int, proposal []byte, proof []byte, publicKey *tcrsa.KeyMeta) bool {
 	// Parse signature
 	signature := &tcrsa.Signature{}
 	err := json.Unmarshal(proof, signature)
@@ -431,7 +484,7 @@ func verfiyThld(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa
 	}
 
 	// Verify the signature
-	marshalData := getMsgdata(id, sid, proposal)
+	marshalData := getMsgdata(id, round, sid, proposal)
 	documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, publicKey)
 	flag, err := go_hotstuff.TVerify(publicKey, *signature, documentHash)
 	if err != nil || !flag {
@@ -442,16 +495,18 @@ func verfiyThld(id int, sid int, proposal []byte, proof []byte, publicKey *tcrsa
 }
 
 // Combine these fields in []byte format
-func getMsgdata(senderId int, senderSid int, sednerProposal []byte) []byte {
+func getMsgdata(id int, round int, sid int, proposal []byte) []byte {
 	type msgData struct {
 		Id       int
+		Round    int
 		Sid      int
 		Proposal []byte
 	}
 	data := &msgData{
-		Id:       senderId,
-		Sid:      senderSid,
-		Proposal: sednerProposal,
+		Id:       id,
+		Round:    round,
+		Sid:      sid,
+		Proposal: proposal,
 	}
 	marshal, _ := json.Marshal(data)
 	return marshal

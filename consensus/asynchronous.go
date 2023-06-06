@@ -17,7 +17,7 @@ import (
 
 // common hotstuff func defined in the paper
 type Asynchronous interface {
-	//Msg(msgType pb.MsgType, id int, sid int, proposal []byte, signatureByte []byte) *pb.Msg
+	//Msg(msgType pb.MsgType, id int, round int, sid int, proposal []byte, signatureByte []byte) *pb.Msg
 	GetMsgEntrance() chan<- *pb.Msg
 	GetNetworkInfo() map[uint32]string
 	GetSelfInfo() *config.ReplicaInfo
@@ -26,15 +26,15 @@ type Asynchronous interface {
 	Unicast(address string, msg *pb.Msg) error
 	ProcessProposal(cmds []string) error
 
-	PbValueMsg(id int, sid int, invokePhase string, proposal []byte, proof []byte) *pb.Msg
-	PbEchoMsg(id int, sid int, invokePhase string, proposal []byte, partialSig []byte) *pb.Msg
-	PbFinalMsg(id int, sid int, proposal []byte, signature []byte) *pb.Msg
-	CoinShareMsg(id int, sid int, sigShare []byte) *pb.Msg
-	SpbFinalMsg(id int, sid int, proposal []byte, signature []byte) *pb.Msg
-	DoneMsg(id int, sid int) *pb.Msg
-	HaltMsg(id int, sid int, final []byte) *pb.Msg
-	PreVoteMsg(id int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg
-	VoteMsg(id int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg
+	PbValueMsg(id int, round int, sid int, invokePhase string, proposal []byte, proof []byte) *pb.Msg
+	PbEchoMsg(id int, round int, sid int, invokePhase string, proposal []byte, partialSig []byte) *pb.Msg
+	PbFinalMsg(id int, round int, proposal []byte, signature []byte) *pb.Msg
+	CoinShareMsg(id int, round int, sid int, sigShare []byte) *pb.Msg
+	SpbFinalMsg(id int, round int, sid int, proposal []byte, signature []byte) *pb.Msg
+	DoneMsg(id int, round int, sid int) *pb.Msg
+	HaltMsg(id int, round int, sid int, final []byte) *pb.Msg
+	PreVoteMsg(id int, round int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg
+	VoteMsg(id int, round int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg
 }
 
 type AsynchronousImpl struct {
@@ -44,7 +44,7 @@ type AsynchronousImpl struct {
 	TxnSet        go_hotstuff.CmdSet
 }
 
-// func (a *AsynchronousImpl) Msg(msgType pb.MsgType, id int, sid int, proposal []byte, signatureByte []byte) *pb.Msg {
+// func (a *AsynchronousImpl) Msg(msgType pb.MsgType, id int, round int, sid int, proposal []byte, signatureByte []byte) *pb.Msg {
 // 	msg := &pb.Msg{}
 // 	switch msgType {
 // 	case pb.MsgType_PBVALUE:
@@ -146,10 +146,11 @@ func (a *AsynchronousImpl) ProcessProposal(cmds []string) error {
 	return nil
 }
 
-func (a *AsynchronousImpl) PbValueMsg(id int, sid int, invokePhase string, proposal []byte, proof []byte) *pb.Msg {
+func (a *AsynchronousImpl) PbValueMsg(id int, round int, sid int, invokePhase string, proposal []byte, proof []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_PbValue{PbValue: &pb.PbValue{
 		Id: uint64(id),
+		Round: uint64(round),
 		Sid: uint64(sid),
 		InvokePhase: invokePhase,
 		Proposal: proposal,
@@ -158,10 +159,11 @@ func (a *AsynchronousImpl) PbValueMsg(id int, sid int, invokePhase string, propo
 	return msg
 }
 
-func (a *AsynchronousImpl) PbEchoMsg(id int, sid int, invokePhase string, proposal []byte, partialSig []byte) *pb.Msg {
+func (a *AsynchronousImpl) PbEchoMsg(id int, round int, sid int, invokePhase string, proposal []byte, partialSig []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_PbEcho{PbEcho: &pb.PbEcho{
 		Id: uint64(id),
+		Round: uint64(round),
 		Sid: uint64(sid),
 		InvokePhase: invokePhase,
 		Proposal: proposal,
@@ -170,31 +172,33 @@ func (a *AsynchronousImpl) PbEchoMsg(id int, sid int, invokePhase string, propos
 	return msg
 }
 
-func (a *AsynchronousImpl) PbFinalMsg(id int, sid int, proposal []byte, signature []byte) *pb.Msg {
+func (a *AsynchronousImpl) PbFinalMsg(id int, round int, proposal []byte, signature []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_PbFinal{PbFinal: &pb.PbFinal{
 		Id: uint64(id),
-		Sid: uint64(sid),
+		Round: uint64(round),
 		Proposal: proposal,
 		Signature: signature,
 	}}
 	return msg
 }
 
-func (a *AsynchronousImpl) CoinShareMsg(id int, sid int, partialSig []byte) *pb.Msg {
+func (a *AsynchronousImpl) CoinShareMsg(id int, round int, sid int, partialSig []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_CoinShare{CoinShare: &pb.CoinShare{
 		Id: uint64(id),
+		Round: uint64(round),
 		Sid: uint64(sid),
 		PartialSig: partialSig,
 	}}
 	return msg
 }
 
-func (a *AsynchronousImpl) SpbFinalMsg(id int, sid int, proposal []byte, signature []byte) *pb.Msg {
+func (a *AsynchronousImpl) SpbFinalMsg(id int, round int, sid int, proposal []byte, signature []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_SpbFinal{SpbFinal: &pb.SpbFinal{
 		Id: uint64(id),
+		Round: uint64(round),
 		Sid: uint64(sid),
 		Proposal: proposal,
 		Signature: signature,
@@ -202,29 +206,32 @@ func (a *AsynchronousImpl) SpbFinalMsg(id int, sid int, proposal []byte, signatu
 	return msg
 }
 
-func (a *AsynchronousImpl) DoneMsg(id int, sid int) *pb.Msg {
+func (a *AsynchronousImpl) DoneMsg(id int, round int, sid int) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_Done{Done: &pb.Done{
 		Id: uint64(id),
+		Round: uint64(round),
 		Sid: uint64(sid),
 	}}
 	return msg
 }
 
-func (a *AsynchronousImpl) HaltMsg(id int, sid int, final []byte) *pb.Msg {
+func (a *AsynchronousImpl) HaltMsg(id int, round int, sid int, final []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_Halt{Halt: &pb.Halt{
 		Id: uint64(id),
+		Round: uint64(round),
 		Sid: uint64(sid),
 		Final: final,
 	}}
 	return msg
 }
 
-func (a *AsynchronousImpl) PreVoteMsg(id int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg {
+func (a *AsynchronousImpl) PreVoteMsg(id int, round int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_PreVote{PreVote: &pb.PreVote{
 		Id: uint64(id),
+		Round: uint64(round),
 		Sid: uint64(sid),
 		Leader: uint64(leader),
 		Flag: uint64(flag),
@@ -235,10 +242,11 @@ func (a *AsynchronousImpl) PreVoteMsg(id int, sid int, leader int, flag int, pro
 	return msg
 }
 
-func (a *AsynchronousImpl) VoteMsg(id int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg {
+func (a *AsynchronousImpl) VoteMsg(id int, round int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_Vote{Vote: &pb.Vote{
 		Id: uint64(id),
+		Round: uint64(round),
 		Sid: uint64(sid),
 		Leader: uint64(leader),
 		Flag: uint64(flag),

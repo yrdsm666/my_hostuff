@@ -90,69 +90,77 @@ message Reply {
 
 message PbValue {
   uint64 id = 1;
-  uint64 sid = 2;
-  string invokePhase = 3;
-  bytes proposal = 4;
-  bytes proof = 5;
+  uint64 round = 2;
+  uint64 sid = 3;
+  string invokePhase = 4;
+  bytes proposal = 5;
+  bytes proof = 6;
 }
 
 message PbEcho {
   uint64 id = 1;
-  uint64 sid = 2;
-  string invokePhase = 3;
-  bytes proposal = 4;
-  bytes partialSig = 5;
+  uint64 round = 2;
+  uint64 sid = 3;
+  string invokePhase = 4;
+  bytes proposal = 5;
+  bytes partialSig = 6;
 }
 
 message PbFinal {
   uint64 id = 1;
-  uint64 sid = 2;
+  uint64 round = 2;
   bytes proposal = 3;
   bytes signature = 4;
 }
 
 message CoinShare {
   uint64 id = 1;
-  uint64 sid = 2;
-  bytes partialSig = 3;
+  uint64 round = 2;
+  uint64 sid = 3;
+  bytes partialSig = 4;
 }
 
 message SpbFinal {
   uint64 id = 1;
-  uint64 sid = 2;
-  bytes proposal = 3;
-  bytes signature = 4;
+  uint64 round = 2;
+  uint64 sid = 3;
+  bytes proposal = 4;
+  bytes signature = 5;
 }
 
 message Done {
   uint64 id = 1;
-  uint64 sid = 2;
+  uint64 round = 2;
+  uint64 sid = 3;
 }
 
 message Halt {
   uint64 id = 1;
-  uint64 sid = 2;
-  bytes final = 3;
+  uint64 round = 2;
+  uint64 sid = 3;
+  bytes final = 4;
 }
 
 message PreVote {
   uint64 id = 1;
-  uint64 sid = 2;
-  uint64 leader = 3;
-  uint64 flag = 4;
-  bytes proposal = 5;
-  bytes signature = 6;
-  bytes partialSig = 7;
+  uint64 round = 2;
+  uint64 sid = 3;
+  uint64 leader = 4;
+  uint64 flag = 5;
+  bytes proposal = 6;
+  bytes signature = 7;
+  bytes partialSig = 8;
 }
 
 message Vote {
   uint64 id = 1;
-  uint64 sid = 2;
-  uint64 leader = 3;
-  uint64 flag = 4;
-  bytes proposal = 5;
-  bytes signature = 6;
-  bytes partialSig = 7;
+  uint64 round = 2;
+  uint64 sid = 3;
+  uint64 leader = 4;
+  uint64 flag = 5;
+  bytes proposal = 6;
+  bytes signature = 7;
+  bytes partialSig = 8;
 }
 
 service HotStuffService {

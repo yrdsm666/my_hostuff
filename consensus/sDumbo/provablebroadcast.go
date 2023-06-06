@@ -24,7 +24,7 @@ import (
 )
 
 type ProvableBroadcast interface {
-	startProvableBroadcast(proposal []byte, proof []byte, j string, verfiyMethod func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool)
+	startProvableBroadcast(proposal []byte, proof []byte, sid int, invokePhase string, verfiyMethod func(int, int, int, []byte, []byte, *tcrsa.KeyMeta) bool)
 	handleProvableBroadcastMsg(msg *pb.Msg)
 	getSignature() tcrsa.Signature
 	getProposal() []byte
@@ -44,8 +44,9 @@ type ProvableBroadcastImpl struct {
 	proposalHash []byte
 	DocumentHash []byte
 	
+	sid          int
 	invokePhase  string // which phase invoke the PB
-	valueVerfiy  func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool
+	valueVerfiy  func(int, int, int, []byte, []byte, *tcrsa.KeyMeta) bool
 	
 	EchoVote     []*tcrsa.SigShare
 	lockVectors  []Vector
@@ -79,27 +80,29 @@ func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 // proof: proof of proposal
 // invokePhase: identify which phase called PB
 // valueValidation: external validation function
-func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof []byte, invokePhase string, valueValidation func(int, int, []byte, []byte, *tcrsa.KeyMeta) bool) {
-	logger.Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Start Provable Broadcast " + invokePhase)
+func (prb *ProvableBroadcastImpl) startProvableBroadcast(proposal []byte, proof []byte, sid int, invokePhase string, valueValidation func(int, int, int, []byte, []byte, *tcrsa.KeyMeta) bool) {
+	logger.Info("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] Start Provable Broadcast " + invokePhase)
 
+	prb.proposal = proposal
+	prb.proof = proof
+	prb.sid = sid
 	prb.invokePhase = invokePhase
-	prb.EchoVote = make([]*tcrsa.SigShare, 0)
-	prb.lockSet.Lock()
-	prb.lockVectors = make([]Vector, 0)
-	prb.lockSet.Unlock()
 	prb.valueVerfiy = valueValidation
 	// fmt.Println("valueValidation:")
 	// fmt.Println(valueValidation)
 	// fmt.Println(prb.valueVerfiy)
-	prb.proposal = proposal
-	prb.proof = proof
 
+	prb.EchoVote = make([]*tcrsa.SigShare, 0)
+	prb.lockSet.Lock()
+	prb.lockVectors = make([]Vector, 0)
+	prb.lockSet.Unlock()
+	
 	// create msg
 	id := int(prb.acs.ID)
-	pbValueMsg := prb.acs.PbValueMsg(id, prb.acs.Sid, invokePhase, prb.proposal, prb.proof)
+	pbValueMsg := prb.acs.PbValueMsg(id, prb.acs.round, sid, invokePhase, proposal, proof)
 
 	prb.proposalHash, _ = go_hotstuff.CreateDocumentHash(prb.proposal, prb.acs.Config.PublicKey)
-	data := getMsgdata(id, prb.acs.Sid, prb.proposalHash)
+	data := getMsgdata(id, prb.acs.round, sid, prb.proposalHash)
 	prb.DocumentHash, _ = go_hotstuff.CreateDocumentHash(data, prb.acs.Config.PublicKey)
 
 	// broadcast msg
@@ -117,15 +120,18 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 	case *pb.Msg_PbValue:
 		pbValueMsg := msg.GetPbValue()
 		senderId := int(pbValueMsg.Id)
+		senderRound := int(pbValueMsg.Round)
 		senderSid := int(pbValueMsg.Sid)
 		invokePhase := pbValueMsg.InvokePhase
-		logger.WithFields(logrus.Fields{
-			"senderId":  senderId,
-			"senderSid": senderSid,
-		}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get PbValue msg")
 		senderProposal := pbValueMsg.Proposal
 		// senderProof := pbValueMsg.Proof
 
+		logger.WithFields(logrus.Fields{
+			"senderId":  senderId,
+			"senderRound":  senderRound,
+			"senderSid": senderSid,
+		}).Info("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] Get PbValue msg")
+		
 		// external validity verification
 		// fmt.Println(senderProposal)
 		// fmt.Println(senderProof)
@@ -147,16 +153,23 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			}
 			// verify the proof
 			initProposal := bytesSub(senderProposal, []byte(SPB_PHASE_2))
-			newProposal := bytesAdd(initProposal, []byte(SPB_PHASE_1))
-			proposalHash, _ := go_hotstuff.CreateDocumentHash(newProposal, prb.acs.Config.PublicKey)
-			marshalData := getMsgdata(senderId, senderSid, proposalHash)
-			flag, err := go_hotstuff.TVerify(prb.acs.Config.PublicKey, *proof, marshalData)
+			// newProposal := bytesAdd(initProposal, []byte(SPB_PHASE_1))
+			// proposalHash, _ := go_hotstuff.CreateDocumentHash(newProposal, prb.acs.Config.PublicKey)
+			// marshalData := getMsgdata(senderId, senderRound, senderSid, proposalHash)
+			// flag, err := go_hotstuff.TVerify(prb.acs.Config.PublicKey, *proof, marshalData)
+			// if err != nil || !flag {
+			// 	logger.WithField("error", err.Error()).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(int(prb.acs.round)) + "] [PB] pbValue: verfiy proof of SPB_1 failed in SPB_2.")
+			// 	return
+			// }
+			flag, err := verfiySpbSig(senderId, senderRound, senderSid, []byte(SPB_PHASE_1), senderProposal, *proof, prb.acs.Config.PublicKey)
 			if err != nil || flag == false {
-				logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(int(prb.acs.Sid)) + "] [PB] pbValue: verfiy proof of SPB_1 failed in SPB_2.")
+				logger.WithField("error", err.Error()).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbValue: verfiy proof of SPB_1 failed in SPB_2.")
 				return
 			}
+
 			lockVector := Vector{
 				Id:        senderId,
+				Round:     senderRound,
 				Sid:       senderSid,
 				Proposal:  initProposal,
 				Signature: *proof,
@@ -167,30 +180,30 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		}
 
 		// Collect PB values in ACS
-		if invokePhase == PB_PHASE && senderSid >= prb.acs.Sid {
-			prb.acs.insertValue(senderId, senderSid, senderProposal)
+		if invokePhase == PB_PHASE && senderRound >= prb.acs.round {
+			prb.acs.insertValue(senderRound, senderId, senderProposal)
 			logger.WithFields(logrus.Fields{
 				"senderId":                      senderId,
 				"senderSid":                     senderSid,
 				"len(senderProposal):":          len(senderProposal),
 				"len(valueVectors):":            len(prb.acs.valueVectors),
 				"len(valueVectors[senderSid]):": len(prb.acs.valueVectors[senderSid]),
-			}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Save value of PbValue msg")
+			}).Info("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] Save value of PbValue msg")
 		}
 
 		// Create threshold signature share
 		// Perform threshold signature on the proposed Hash
 		proposalHash, _ := go_hotstuff.CreateDocumentHash(senderProposal, prb.acs.Config.PublicKey)
-		marshalData := getMsgdata(senderId, senderSid, proposalHash)
+		marshalData := getMsgdata(senderId, senderRound, senderSid, proposalHash)
 		documentHash, _ := go_hotstuff.CreateDocumentHash(marshalData, prb.acs.Config.PublicKey)
 		partSig, err := go_hotstuff.TSign(documentHash, prb.acs.Config.PrivateKey, prb.acs.Config.PublicKey)
 		if err != nil {
-			logger.WithField("error", err.Error()).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbValue: create the partial signature failed.")
+			logger.WithField("error", err.Error()).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbValue: create the partial signature failed.")
 		}
 
 		// create msg
 		partSigBytes, _ := json.Marshal(partSig)
-		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderSid, prb.invokePhase, proposalHash, partSigBytes)
+		pbEchoMsg := prb.acs.PbEchoMsg(int(prb.acs.ID), senderRound, senderSid, prb.invokePhase, proposalHash, partSigBytes)
 		if uint32(senderId) != prb.acs.ID {
 			// reply echo msg to sender
 			err = prb.acs.Unicast(prb.acs.GetNetworkInfo()[uint32(senderId)], pbEchoMsg)
@@ -209,28 +222,30 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		}
 
 		pbEchoMsg := msg.GetPbEcho()
+		senderRound := int(pbEchoMsg.Round)
 		senderSid := int(pbEchoMsg.Sid)
 
-		// Ignore messages from old sid
-		if senderSid != prb.acs.Sid {
+		// Ignore messages from old round or sid
+		if senderRound != prb.acs.round || senderSid != prb.sid{
 			logger.WithFields(logrus.Fields{
 				"senderId":  int(pbEchoMsg.Id),
+				"senderRound": senderRound,
 				"senderSid": senderSid,
-			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get mismatch sid PbEcho msg")
+			}).Warn("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] Get mismatch sid or round PbEcho msg")
 			return
 		}
 
 		// Ignore messages from other provable broadcast instance
 		senderProposal := pbEchoMsg.Proposal
 		if bytes.Compare(senderProposal, prb.proposalHash) != 0 {
-			logger.Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get mismatch proposal PbEcho msg")
+			logger.Warn("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] Get mismatch proposal PbEcho msg")
 			return
 		}
 
 		logger.WithFields(logrus.Fields{
 			"senderId":  int(pbEchoMsg.Id),
 			"senderSid": senderSid,
-		}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] Get pbEcho msg")
+		}).Info("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] Get pbEcho msg")
 
 		// get the partSig form message
 		partSig := &tcrsa.SigShare{}
@@ -246,8 +261,9 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 				"error":          err.Error(),
 				"mydocumentHash": hex.EncodeToString(prb.DocumentHash),
 				"senderId":       int(pbEchoMsg.Id),
+				"senderRound":    senderRound,
 				"senderSid":      senderSid,
-			}).Warn("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: signature share not verified!")
+			}).Warn("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbEcho: signature share not verified!")
 			return
 		}
 
@@ -260,7 +276,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 				logger.WithFields(logrus.Fields{
 					"error":        err.Error(),
 					"documentHash": hex.EncodeToString(prb.DocumentHash),
-				}).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: create full signature failed!")
+				}).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbEcho: create full signature failed!")
 				return
 			}
 			prb.Signature = signature
@@ -270,11 +286,11 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 				"signature":    len(signature),
 				"documentHash": len(prb.DocumentHash),
 				"echoVote":     len(prb.EchoVote),
-			}).Info("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: create full signature")
+			}).Info("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbEcho: create full signature")
 			// if len(signature) != 256 {
 			// 	logger.WithFields(logrus.Fields{
 			// 		"signature":    hex.EncodeToString(signature),
-			// 	}).Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] pbEcho: create full signature")
+			// 	}).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbEcho: create full signature")
 			// }
 		}
 		break
@@ -285,7 +301,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 
 func (prb *ProvableBroadcastImpl) getSignature() tcrsa.Signature {
 	if prb.complete == false {
-		logger.Error("[replica_" + strconv.Itoa(int(prb.acs.ID)) + "] [sid_" + strconv.Itoa(prb.acs.Sid) + "] [PB] getSignature: Provable Broadcast is not complet")
+		logger.Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] getSignature: Provable Broadcast is not complet")
 		return nil
 	}
 	return prb.Signature

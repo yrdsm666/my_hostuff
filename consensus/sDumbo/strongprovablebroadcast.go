@@ -17,14 +17,14 @@ import (
 	// "github.com/wjbbig/go-hotstuff/logging"
 
 	// "os"
-	"strconv"
+	// "strconv"
 	// "fmt"
 )
 
 // var logger = logging.GetLogger()
 
 type StrongProvableBroadcast interface {
-	startStrongProvableBroadcast(proposal []byte)
+	startStrongProvableBroadcast(proposal []byte, sid int)
 	controller(task string)
 	getSignature1() tcrsa.Signature
 	getSignature2() tcrsa.Signature
@@ -40,6 +40,7 @@ type StrongProvableBroadcastImpl struct {
 
 	proposal []byte
 	complete bool
+	sid      int
 	// start         bool
 	proBroadcast1 ProvableBroadcast
 	proBroadcast2 ProvableBroadcast
@@ -64,10 +65,11 @@ func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastI
 }
 
 // sid: session id
-func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []byte) {
-	logger.Info("[replica_" + strconv.Itoa(int(spb.acs.ID)) + "] [sid_" + strconv.Itoa(spb.acs.Sid) + "] [SPB] Start Strong Provable Broadcast")
+func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []byte, sid int) {
+	logger.Info("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [SPB] Start Strong Provable Broadcast")
 
 	spb.proposal = proposal
+	spb.sid = sid
 	// spb.Signature1 = tcrsa.SigShare{}
 	// spb.Signature2 = tcrsa.SigShare{}
 	spb.proBroadcast1 = NewProvableBroadcast(spb.acs)
@@ -77,7 +79,7 @@ func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []
 	// deep copy
 	newProposal := bytesAdd(proposal, []byte(SPB_PHASE_1))
 
-	go spb.proBroadcast1.startProvableBroadcast(newProposal, nil, "1", CheckValue)
+	go spb.proBroadcast1.startProvableBroadcast(newProposal, nil, sid, "1", CheckValue)
 }
 
 // func (spb *StrongProvableBroadcastImpl) handleStrongProvableBroadcastMsg(msg *pb.Msg) {
@@ -110,7 +112,7 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 		newProposal := bytesAdd(spb.proposal, []byte(SPB_PHASE_2))
 
 		spb.acs.taskPhase = SPB_PHASE_2
-		go spb.proBroadcast2.startProvableBroadcast(newProposal, marshalData, "2", verfiyThld)
+		go spb.proBroadcast2.startProvableBroadcast(newProposal, marshalData, spb.sid, "2", verfiyThld)
 	}
 	if task == "getPbValue_2" {
 		signature := spb.proBroadcast2.getSignature()
@@ -125,7 +127,7 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 
 func (spb *StrongProvableBroadcastImpl) getSignature1() tcrsa.Signature {
 	if !spb.proBroadcast1.getStatus() {
-		logger.Error("[replica_" + strconv.Itoa(int(spb.acs.ID)) + "] [sid_" + strconv.Itoa(spb.acs.Sid) + "] [SPB] Provable Broadcast 1 is not complet")
+		logger.Error("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [SPB] Provable Broadcast 1 is not complet")
 		return nil
 	}
 	return spb.Signature1
@@ -133,7 +135,7 @@ func (spb *StrongProvableBroadcastImpl) getSignature1() tcrsa.Signature {
 
 func (spb *StrongProvableBroadcastImpl) getSignature2() tcrsa.Signature {
 	if !spb.proBroadcast2.getStatus() {
-		logger.Error("[replica_" + strconv.Itoa(int(spb.acs.ID)) + "] [sid_" + strconv.Itoa(spb.acs.Sid) + "] [SPB] Provable Broadcast 2 is not complet")
+		logger.Error("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [SPB] Provable Broadcast 2 is not complet")
 		return nil
 	}
 	return spb.Signature2
