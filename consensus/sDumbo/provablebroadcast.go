@@ -293,24 +293,24 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			// 		"signature":    hex.EncodeToString(signature),
 			// 	}).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbEcho: create full signature")
 			// }
-			if len(signature)<256{
-				logger.WithFields(logrus.Fields{
-					"documentHash": hex.EncodeToString(prb.DocumentHash),
-					"len(documentHash)": len(prb.DocumentHash),
-					"signature":    len(signature),
-				}).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [MVBA] vote: create full signature of halt")
+			// if len(signature)<256{
+			// 	logger.WithFields(logrus.Fields{
+			// 		"documentHash": hex.EncodeToString(prb.DocumentHash),
+			// 		"len(documentHash)": len(prb.DocumentHash),
+			// 		"signature":    len(signature),
+			// 	}).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [MVBA] vote: create full signature of halt")
 				
-				for _, f := range prb.EchoVote {
-					fmt.Println("YFina_Id:",f.Id)
-					// // fmt.Println(len(f))
-					// fmt.Println(f)
-					// fmt.Println(len(f.Xi))
-					// fmt.Println(f.Xi)
-				}
-				fmt.Println(hex.EncodeToString(signature))
-				fmt.Println(signature)
-				return
-			}
+			// 	for _, f := range prb.EchoVote {
+			// 		fmt.Println("YFina_Id:",f.Id)
+			// 		// // fmt.Println(len(f))
+			// 		// fmt.Println(f)
+			// 		// fmt.Println(len(f.Xi))
+			// 		// fmt.Println(f.Xi)
+			// 	}
+			// 	fmt.Println(hex.EncodeToString(signature))
+			// 	fmt.Println(signature)
+			// 	return
+			// }
 		}
 		break
 	default:

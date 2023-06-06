@@ -727,25 +727,25 @@ func (mvba *SpeedMvbaImpl) handleVote(msg *pb.Msg) {
 				// "documentHash": hex.EncodeToString(documentHash),
 			}).Info("[p_" + strconv.Itoa(int(mvba.acs.ID)) + "] [r_" + strconv.Itoa(mvba.acs.round) + "] [s_" + strconv.Itoa(mvba.sid) + "] [MVBA] vote: create full signature of halt")
 			
-			if len(leaderSignature)<256{
-				logger.WithFields(logrus.Fields{
-					"documentHash": hex.EncodeToString(documentHash),
-					"len(documentHash)": len(documentHash),
-					"signature":    len(leaderSignature),
-					"len(mvba.YFinal)": len(mvba.YFinal),
-				}).Error("[p_" + strconv.Itoa(int(mvba.acs.ID)) + "] [r_" + strconv.Itoa(mvba.acs.round) + "] [s_" + strconv.Itoa(mvba.sid) + "] [MVBA] vote: create full signature of halt")
+			// if len(leaderSignature)<256{
+			// 	logger.WithFields(logrus.Fields{
+			// 		"documentHash": hex.EncodeToString(documentHash),
+			// 		"len(documentHash)": len(documentHash),
+			// 		"signature":    len(leaderSignature),
+			// 		"len(mvba.YFinal)": len(mvba.YFinal),
+			// 	}).Error("[p_" + strconv.Itoa(int(mvba.acs.ID)) + "] [r_" + strconv.Itoa(mvba.acs.round) + "] [s_" + strconv.Itoa(mvba.sid) + "] [MVBA] vote: create full signature of halt")
 				
-				for _, f := range mvba.YFinal {
-					fmt.Println("YFina_Id:",f.Id)
-					// // fmt.Println(len(f))
-					// fmt.Println(f)
-					// fmt.Println(len(f.Xi))
-					// fmt.Println(f.Xi)
-				}
-				fmt.Println(hex.EncodeToString(leaderSignature))
-				fmt.Println(signature)
-				return
-			}
+			// 	for _, f := range mvba.YFinal {
+			// 		fmt.Println("YFina_Id:",f.Id)
+			// 		// // fmt.Println(len(f))
+			// 		// fmt.Println(f)
+			// 		// fmt.Println(len(f.Xi))
+			// 		// fmt.Println(f.Xi)
+			// 	}
+			// 	fmt.Println(hex.EncodeToString(leaderSignature))
+			// 	fmt.Println(signature)
+			// 	return
+			// }
 
 			vector := Vector{
 				Id:        leader,
