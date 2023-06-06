@@ -55,6 +55,8 @@ const (
 	SPB_PHASE_2 string = "SPB_2"
 	CC_PHASE    string = "CC"
 	COINSHARE   string = "COIN_SHARE_WITH_SID_"
+
+	ROUNDSUM    int = 100
 )
 
 // only variables with uppercase letters can be converted to JSON
@@ -93,9 +95,9 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	}
 	acs.Config.PrivateKey = privateKey
 
-	// create ACS components
-	acs.proBroadcast = NewProvableBroadcast(acs)
-	acs.mvba = NewSpeedMvba(acs)
+	// // create ACS components
+	// acs.proBroadcast = NewProvableBroadcast(acs)
+	// acs.mvba = NewSpeedMvba(acs)
 
 	// create sDumbo input value cache and msg cache
 	// valueVectors: round -> id -> []byte
@@ -237,7 +239,7 @@ func (acs *CommonSubsetImpl) controller(task string) {
 						"vSid":      v.Sid,
 						"vProposal": hex.EncodeToString(v.Proposal),
 						"valueHash": hex.EncodeToString(valueHash),
-					}).Error("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] The mvba result is not Hash of value proposal!")
+					}).Error("[p_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] The mvba result is not Hash of value proposal!")
 					continue
 				}
 				var txs []string
@@ -261,9 +263,10 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		fmt.Println(" GOOD WORK!.")
 		fmt.Println("---------------- [END_2] -----------------")
 
-		// if acs.round < 10 {
-		// 	go acs.startNewInstance()
-		// }
+		if acs.round < ROUNDSUM {
+			go acs.startNewInstance()
+		}
+
 	// case "restartWithLeaderProposal":
 	// 	fmt.Println("")
 	// 	fmt.Println("replica: ", acs.ID)
@@ -312,7 +315,14 @@ func (acs *CommonSubsetImpl) controller(task string) {
 
 func (acs *CommonSubsetImpl) startNewInstance() {
 	acs.round = acs.round + 1
+	// acs.mvba.initStatus()
 	acs.taskPhase = PB_PHASE
+
+	// create ACS components
+	acs.proBroadcast = NewProvableBroadcast(acs)
+	acs.mvba = NewSpeedMvba(acs)
+
+	logger.Info("[p_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] startNewInstance")
 
 	// Clear the value cache from old sids
 	_, ok := acs.valueVectors[acs.round-1]
@@ -320,15 +330,13 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 		delete(acs.valueVectors, acs.round-1)
 	}
 
-	logger.Info("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] startNewInstance")
-
 	// Init mvba status
 	acs.inputVectors = make([]Vector, 0)
 
 	// Handle msg from msg cache
 	msgList := acs.getMsgFromCache(acs.round, 0)
 	if msgList != nil {
-		logger.Warn("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [MVBA] Handle msg from msg cache")
+		logger.Warn("[p_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [MVBA] Handle msg from msg cache")
 		for _, msg := range msgList {
 			acs.handleMsg(msg)
 		}
@@ -352,11 +360,6 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 }
 
 func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
-	// Ignore messages if the number of messages is sufficient
-	if len(acs.inputVectors) >= 2*acs.Config.F+1 {
-		return
-	}
-
 	// Parse senderId and senderSid of message
 	pbFinal := msg.GetPbFinal()
 	senderId := int(pbFinal.Id)
@@ -367,7 +370,7 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		logger.WithFields(logrus.Fields{
 			"senderId":  senderId,
 			"senderRound":  senderRound,
-		}).Warn("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get old sid of Pbfinal msg")
+		}).Warn("[p_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get old sid of Pbfinal msg")
 		return
 	} else if senderRound > acs.round {
 		// Save messages from future sid or round
@@ -375,14 +378,19 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 		logger.WithFields(logrus.Fields{
 			"senderId":  senderId,
 			"senderRound":  senderRound,
-		}).Warn("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get future sid of Pbfinal msg and save it")
+		}).Warn("[p_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get future sid of Pbfinal msg and save it")
+		return
+	}
+
+	// Ignore messages if the number of messages is sufficient
+	if len(acs.inputVectors) >= 2*acs.Config.F+1 {
 		return
 	}
 
 	logger.WithFields(logrus.Fields{
 		"senderId":  senderId,
 		"senderRound":  senderRound,
-	}).Info("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get PbFinal msg")
+	}).Info("[p_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get PbFinal msg")
 
 	// Parse proposal and signature of message
 	proposal := pbFinal.Proposal
@@ -396,7 +404,7 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 	marshalData := getMsgdata(senderId, senderRound, 0, proposal)
 	flag, err := go_hotstuff.TVerify(acs.Config.PublicKey, *signature, marshalData)
 	if err != nil || !flag {
-		logger.WithField("error", err.Error()).Error("[r_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] verfiy signature from PbFinal failed.")
+		logger.WithField("error", err.Error()).Error("[p_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] verfiy signature from PbFinal failed.")
 		return
 	}
 
@@ -430,7 +438,7 @@ func (acs *CommonSubsetImpl) broadcastPbFinal() {
 	acs.MsgEntrance <- pbFinalMsg
 }
 
-func (acs *CommonSubsetImpl) insertValue(senderRound int, senderId int, senderProposal []byte) {
+func (acs *CommonSubsetImpl) insertValue(senderId int, senderRound int, senderProposal []byte) {
 	_, ok := acs.valueVectors[senderRound]
 	if !ok {
 		roundValueVectors := make(map[int][]byte)

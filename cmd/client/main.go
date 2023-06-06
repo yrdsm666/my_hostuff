@@ -80,7 +80,8 @@ func (client *HotStuffClient) receiveReply(ctx context.Context) {
 				if re.result == replyMsg.Result {
 					re.count++
 					//获得f+1节点的reply
-					if re.count == client.hotStuffConfig.F+1 {
+					if re.count == 2*client.hotStuffConfig.F+1 {
+					// if re.count == client.hotStuffConfig.F+1 {
 						logger.WithFields(logrus.Fields{
 							"cmd":    cmd,
 							"result": re.result,

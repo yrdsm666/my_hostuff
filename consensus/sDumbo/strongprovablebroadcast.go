@@ -17,7 +17,7 @@ import (
 	// "github.com/wjbbig/go-hotstuff/logging"
 
 	// "os"
-	// "strconv"
+	"strconv"
 	// "fmt"
 )
 
@@ -66,7 +66,7 @@ func NewStrongProvableBroadcast(acs *CommonSubsetImpl) *StrongProvableBroadcastI
 
 // sid: session id
 func (spb *StrongProvableBroadcastImpl) startStrongProvableBroadcast(proposal []byte, sid int) {
-	logger.Info("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [SPB] Start Strong Provable Broadcast")
+	logger.Info("[p_" + strconv.Itoa(int(spb.acs.ID)) + "] [r_" + strconv.Itoa(spb.acs.round) + "] [s_" + strconv.Itoa(spb.sid) + "] [SPB] Start Strong Provable Broadcast")
 
 	spb.proposal = proposal
 	spb.sid = sid
@@ -127,7 +127,7 @@ func (spb *StrongProvableBroadcastImpl) controller(task string) {
 
 func (spb *StrongProvableBroadcastImpl) getSignature1() tcrsa.Signature {
 	if !spb.proBroadcast1.getStatus() {
-		logger.Error("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [SPB] Provable Broadcast 1 is not complet")
+		logger.Error("[p_" + strconv.Itoa(int(spb.acs.ID)) + "] [r_" + strconv.Itoa(spb.acs.round) + "] [s_" + strconv.Itoa(spb.sid) + "] [SPB] Provable Broadcast 1 is not complet")
 		return nil
 	}
 	return spb.Signature1
@@ -135,7 +135,7 @@ func (spb *StrongProvableBroadcastImpl) getSignature1() tcrsa.Signature {
 
 func (spb *StrongProvableBroadcastImpl) getSignature2() tcrsa.Signature {
 	if !spb.proBroadcast2.getStatus() {
-		logger.Error("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [SPB] Provable Broadcast 2 is not complet")
+		logger.Error("[p_" + strconv.Itoa(int(spb.acs.ID)) + "] [r_" + strconv.Itoa(spb.acs.round) + "] [s_" + strconv.Itoa(spb.sid) + "] [SPB] Provable Broadcast 2 is not complet")
 		return nil
 	}
 	return spb.Signature2

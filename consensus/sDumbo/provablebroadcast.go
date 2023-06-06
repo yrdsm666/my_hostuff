@@ -20,7 +20,7 @@ import (
 	//"os"
 	"strconv"
 	"sync"
-	// "fmt"
+	"fmt"
 )
 
 type ProvableBroadcast interface {
@@ -161,7 +161,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			// 	logger.WithField("error", err.Error()).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(int(prb.acs.round)) + "] [PB] pbValue: verfiy proof of SPB_1 failed in SPB_2.")
 			// 	return
 			// }
-			flag, err := verfiySpbSig(senderId, senderRound, senderSid, []byte(SPB_PHASE_1), senderProposal, *proof, prb.acs.Config.PublicKey)
+			flag, err := verfiySpbSig(senderId, senderRound, senderSid, []byte(SPB_PHASE_1), initProposal, *proof, prb.acs.Config.PublicKey)
 			if err != nil || flag == false {
 				logger.WithField("error", err.Error()).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbValue: verfiy proof of SPB_1 failed in SPB_2.")
 				return
@@ -181,14 +181,15 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 
 		// Collect PB values in ACS
 		if invokePhase == PB_PHASE && senderRound >= prb.acs.round {
-			prb.acs.insertValue(senderRound, senderId, senderProposal)
-			logger.WithFields(logrus.Fields{
-				"senderId":                      senderId,
-				"senderSid":                     senderSid,
-				"len(senderProposal):":          len(senderProposal),
-				"len(valueVectors):":            len(prb.acs.valueVectors),
-				"len(valueVectors[senderSid]):": len(prb.acs.valueVectors[senderSid]),
-			}).Info("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] Save value of PbValue msg")
+			prb.acs.insertValue(senderId, senderRound, senderProposal)
+			// logger.WithFields(logrus.Fields{
+			// 	"senderId":               senderId,
+			// 	"senderRound":            senderRound,
+			// 	"senderSid":              senderSid,
+			// 	"len(senderProposal):":   len(senderProposal),
+			// 	"len(value):":            len(prb.acs.valueVectors),
+			// 	"len(value[senderSid]):": len(prb.acs.valueVectors[senderRound]),
+			// }).Info("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] Save value of PbValue msg")
 		}
 
 		// Create threshold signature share
@@ -292,6 +293,24 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			// 		"signature":    hex.EncodeToString(signature),
 			// 	}).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbEcho: create full signature")
 			// }
+			if len(signature)<256{
+				logger.WithFields(logrus.Fields{
+					"documentHash": hex.EncodeToString(prb.DocumentHash),
+					"len(documentHash)": len(prb.DocumentHash),
+					"signature":    len(signature),
+				}).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [MVBA] vote: create full signature of halt")
+				
+				for _, f := range prb.EchoVote {
+					fmt.Println("YFina_Id:",f.Id)
+					// // fmt.Println(len(f))
+					// fmt.Println(f)
+					// fmt.Println(len(f.Xi))
+					// fmt.Println(f.Xi)
+				}
+				fmt.Println(hex.EncodeToString(signature))
+				fmt.Println(signature)
+				return
+			}
 		}
 		break
 	default:

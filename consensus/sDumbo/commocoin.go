@@ -18,7 +18,7 @@ import (
 	// "github.com/wjbbig/go-hotstuff/logging"
 	pb "github.com/wjbbig/go-hotstuff/proto"
 	// "os"
-	// "strconv"
+	"strconv"
 	"sync"
 )
 
@@ -35,6 +35,7 @@ type CommonCoinImpl struct {
 	acs *CommonSubsetImpl
 
 	sidStr       string
+	sid          int
 	complete     bool
 	start        bool
 	coinShares   []*tcrsa.SigShare
@@ -56,17 +57,18 @@ func NewCommonCoin(acs *CommonSubsetImpl) *CommonCoinImpl {
 }
 
 func (cc *CommonCoinImpl) startCommonCoin(sidStr string, sid int) {
-	logger.Info("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [CC] Start Common Coin with SidStr " + sidStr)
+	logger.Info("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [CC] Start Common Coin with SidStr " + sidStr)
 
 	cc.coinShares = make([]*tcrsa.SigShare, 0)
 	cc.sidStr = sidStr
-
+	cc.sid = sid
+	
 	id := int(cc.acs.ID)
 
 	cc.DocumentHash, _ = go_hotstuff.CreateDocumentHash([]byte(cc.sidStr), cc.acs.Config.PublicKey)
 	coinShare, err := go_hotstuff.TSign(cc.DocumentHash, cc.acs.Config.PrivateKey, cc.acs.Config.PublicKey)
 	if err != nil {
-		logger.Error("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [CC] create the partial signature failed.")
+		logger.Error("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [CC] create the partial signature failed.")
 		return
 	}
 
@@ -96,7 +98,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 	// If common coin has not yet started, wait common coin start
 	cc.lock.Lock()
 	if cc.start == false {
-		logger.Warn("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [CC] wait common coin start")
+		logger.Warn("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [CC] wait common coin start")
 		cc.waitstart.Wait()
 	}
 	cc.lock.Unlock()
@@ -111,12 +113,12 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 			"senderId":        senderId,
 			"senderRound":  senderRound,
 			"senderSid":       senderSid,
-		}).Info("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [CC] Get share msg")
+		}).Info("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [CC] Get share msg")
 		
 		partSig := &tcrsa.SigShare{}
 		err := json.Unmarshal(coinShare.PartialSig, partSig)
 		if err != nil {
-			logger.WithField("error", err.Error()).Error("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [CC] Unmarshal partSig failed.")
+			logger.WithField("error", err.Error()).Error("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [CC] Unmarshal partSig failed.")
 		}
 
 		err = go_hotstuff.VerifyPartSig(partSig, cc.DocumentHash, cc.acs.Config.PublicKey)
@@ -124,7 +126,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 			logger.WithFields(logrus.Fields{
 				"error":        err.Error(),
 				"documentHash": hex.EncodeToString(cc.DocumentHash),
-			}).Warn("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [CC] CoinShare: share signature not verified!")
+			}).Warn("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [CC] CoinShare: share signature not verified!")
 			return
 		}
 
@@ -135,7 +137,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 			if err != nil {
 				logger.WithFields(logrus.Fields{
 					"error":        err.Error(),
-				}).Error("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [CC] CoinShare: create signature failed!")
+				}).Error("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [CC] CoinShare: create signature failed!")
 				return
 			}
 			cc.Coin = signature
@@ -150,7 +152,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 
 func (cc *CommonCoinImpl) getCoin() tcrsa.Signature {
 	if cc.complete == false {
-		logger.Error("[p_" + strId + "] [r_" + strRound + "] [s_" + strSid + "] [cc] Common coin is not complet")
+		logger.Error("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [cc] Common coin is not complet")
 		return nil
 	}
 	return cc.Coin
