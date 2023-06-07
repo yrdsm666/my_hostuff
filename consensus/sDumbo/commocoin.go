@@ -142,7 +142,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 			}
 			cc.Coin = signature
 			cc.complete = true
-			cc.acs.taskSignal <- "getCoin"
+			cc.acs.controller("getCoin")
 		}
 		break
 	default:

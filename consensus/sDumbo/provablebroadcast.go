@@ -20,7 +20,7 @@ import (
 	//"os"
 	"strconv"
 	"sync"
-	"fmt"
+	// "fmt"
 )
 
 type ProvableBroadcast interface {
@@ -38,7 +38,7 @@ type ProvableBroadcastImpl struct {
 
 	complete     bool
 
-	// the Provable Broadcast information
+	// Provable Broadcast information
 	proposal     []byte
 	proof        []byte
 	proposalHash []byte
@@ -61,17 +61,6 @@ func NewProvableBroadcast(acs *CommonSubsetImpl) *ProvableBroadcastImpl {
 		acs:      acs,
 		complete: false,
 	}
-	// NOTES:
-	// valueVectors needs to be initialized as early as possible.
-	// Assuming valueVectors is initialized in the startProvableBroadcast function,
-	// if a pbvalue message is received before starting Provable Broadcast,
-	// the value of pbvalue message will not be stored in valueVectors.
-	// 注意：
-	// valueVectors 需要尽可能早的初始化。
-	// 假设 valueVectors 在 startProvableBroadcast 函数中被初始化，
-	// 此时如果在 startProvableBroadcast 之前接收到了 pbvalue 消息，
-	// 那么 pbvalue 消息的值不会被存储进入 valueVectors
-	// prb.valueVectors = make(map[int][]byte)
 	return prb
 }
 
@@ -144,7 +133,7 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 		// }
 
 		// Collect PB_1 proof in SPB
-		if prb.invokePhase == "2" && invokePhase == prb.invokePhase {
+		if prb.invokePhase == SPB_PHASE_2 && invokePhase == prb.invokePhase {
 			// get the proof form message
 			proof := &tcrsa.Signature{}
 			err := json.Unmarshal(pbValueMsg.Proof, proof)
@@ -153,14 +142,6 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			}
 			// verify the proof
 			initProposal := bytesSub(senderProposal, []byte(SPB_PHASE_2))
-			// newProposal := bytesAdd(initProposal, []byte(SPB_PHASE_1))
-			// proposalHash, _ := go_hotstuff.CreateDocumentHash(newProposal, prb.acs.Config.PublicKey)
-			// marshalData := getMsgdata(senderId, senderRound, senderSid, proposalHash)
-			// flag, err := go_hotstuff.TVerify(prb.acs.Config.PublicKey, *proof, marshalData)
-			// if err != nil || !flag {
-			// 	logger.WithField("error", err.Error()).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(int(prb.acs.round)) + "] [PB] pbValue: verfiy proof of SPB_1 failed in SPB_2.")
-			// 	return
-			// }
 			flag, err := verfiySpbSig(senderId, senderRound, senderSid, []byte(SPB_PHASE_1), initProposal, *proof, prb.acs.Config.PublicKey)
 			if err != nil || flag == false {
 				logger.WithField("error", err.Error()).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbValue: verfiy proof of SPB_1 failed in SPB_2.")
@@ -282,35 +263,12 @@ func (prb *ProvableBroadcastImpl) handleProvableBroadcastMsg(msg *pb.Msg) {
 			}
 			prb.Signature = signature
 			prb.complete = true
-			prb.acs.taskSignal <- "getPbValue_" + prb.invokePhase
+			prb.acs.controller("getPbValue_" + prb.invokePhase)
 			logger.WithFields(logrus.Fields{
 				"signature":    len(signature),
 				"documentHash": len(prb.DocumentHash),
 				"echoVote":     len(prb.EchoVote),
 			}).Info("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbEcho: create full signature")
-			// if len(signature) != 256 {
-			// 	logger.WithFields(logrus.Fields{
-			// 		"signature":    hex.EncodeToString(signature),
-			// 	}).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [PB] pbEcho: create full signature")
-			// }
-			// if len(signature)<256{
-			// 	logger.WithFields(logrus.Fields{
-			// 		"documentHash": hex.EncodeToString(prb.DocumentHash),
-			// 		"len(documentHash)": len(prb.DocumentHash),
-			// 		"signature":    len(signature),
-			// 	}).Error("[p_" + strconv.Itoa(int(prb.acs.ID)) + "] [r_" + strconv.Itoa(prb.acs.round) + "] [MVBA] vote: create full signature of halt")
-				
-			// 	for _, f := range prb.EchoVote {
-			// 		fmt.Println("YFina_Id:",f.Id)
-			// 		// // fmt.Println(len(f))
-			// 		// fmt.Println(f)
-			// 		// fmt.Println(len(f.Xi))
-			// 		// fmt.Println(f.Xi)
-			// 	}
-			// 	fmt.Println(hex.EncodeToString(signature))
-			// 	fmt.Println(signature)
-			// 	return
-			// }
 		}
 		break
 	default:

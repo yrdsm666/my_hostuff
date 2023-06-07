@@ -30,33 +30,35 @@ var logger = logging.GetLogger()
 type CommonSubsetImpl struct {
 	consensus.AsynchronousImpl
 
-	// Sid        int
 	round      int
 	proposal   []byte
-	// proposalHash []byte
+
 	cancel     context.CancelFunc
-	taskSignal chan string
-	taskPhase  string
+	taskPhase  string  
 
 	// ACS components
-	proBroadcast ProvableBroadcast
-	mvba         SpeedMvba
+	proBroadcast ProvableBroadcast // PB
+	mvba         SpeedMvba  // MVBA
 
-	inputVectors []Vector
+	inputVectors []Vector // MVBA input
 
-	valueVectors map[int]map[int][]byte
-	msgCache     map[int]map[int][]*pb.Msg
-	// startSid     int
+	valueVectors map[int]map[int][]byte // Cache of proposed values of nodes for each round, round -> id -> value
+	msgCache     map[int]map[int][]*pb.Msg // Cache of future messages of sids for each round, round -> sid -> msg
 }
 
 const (
-	PB_PHASE    string = "PB"
-	SPB_PHASE_1 string = "SPB_1"
-	SPB_PHASE_2 string = "SPB_2"
-	CC_PHASE    string = "CC"
-	COINSHARE   string = "COIN_SHARE_WITH_SID_"
+	PB_PHASE      string = "PB"
+	SPB_PHASE_1   string = "SPB_1"
+	SPB_PHASE_2   string = "SPB_2"
+	CC_PHASE      string = "CC"
+	PREVOTE_PHASE string = "PREVOTE"
+	VOTE_PHASE    string = "VOTE"
 
-	ROUNDSUM    int = 100
+	UNLOCKSTR     string = "UNLOCKED"
+	NULLSTR       string = "NULL_NO_SID_"
+	COINSHARE     string = "COIN_SHARE_WITH_SID_"
+
+	ROUNDSUM      int = 100
 )
 
 // only variables with uppercase letters can be converted to JSON
@@ -75,9 +77,8 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 		round:    0,
 		cancel: cancel,
 	}
-
+	
 	acs.MsgEntrance = make(chan *pb.Msg)
-	acs.taskSignal = make(chan string)
 	acs.ID = uint32(id)
 
 	// create txn cache
@@ -106,7 +107,6 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	// msgCache: round -> sid -> []*pb.Ms
 	acs.msgCache = make(map[int]map[int][]*pb.Msg)
 
-	go acs.receiveTaskSignal(ctx)
 	go acs.receiveMsg(ctx)
 
 	// start ACS
@@ -166,17 +166,6 @@ func (acs *CommonSubsetImpl) handleMsg(msg *pb.Msg) {
 	}
 }
 
-func (acs *CommonSubsetImpl) receiveTaskSignal(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case task := <-acs.taskSignal:
-			go acs.controller(task)
-		}
-	}
-}
-
 func (acs *CommonSubsetImpl) controller(task string) {
 	switch task {
 	case "start":
@@ -184,9 +173,9 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		go acs.startNewInstance()
 	case "getPbValue_" + PB_PHASE:
 		acs.broadcastPbFinal()
-	case "getPbValue_1":
+	case "getPbValue_" + SPB_PHASE_1:
 		go acs.mvba.controller(task)
-	case "getPbValue_2":
+	case "getPbValue_" + SPB_PHASE_2:
 		go acs.mvba.controller(task)
 	case "getSpbValue":
 		go acs.mvba.controller(task)
@@ -198,7 +187,7 @@ func (acs *CommonSubsetImpl) controller(task string) {
 			go acs.mvba.startSpeedMvba(proposal)
 		}
 	case "end":
-		// commit
+		// commit txs and reply client
 		fmt.Println("")
 		fmt.Println("---------------- [END_1] -----------------")
 		vector := acs.mvba.getLeaderVector()
@@ -210,25 +199,15 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		res := hex.EncodeToString(vector.Proposal)
 		fmt.Println("partProposal: ", res[len(res)-100:len(res)-1])
 		// fmt.Println("-----------------------------")
+
 		var resVectors []Vector
 		err := json.Unmarshal(vector.Proposal, &resVectors)
 		if err != nil {
 			logger.WithField("error", err.Error()).Error("Unmarshal res failed.")
 		}
 		fmt.Println("resVectorsLen:", len(resVectors))
-		// valueVectors := acs.proBroadcast.getValueVectors()
 		valueVectors := acs.valueVectors[acs.round]
 		var resTxs []string
-		// for _, v := range resVectors {
-		// 	fmt.Printf("type(v): %T", v)
-		// 	fmt.Println("")
-		// 	fmt.Println("pnode: ", v.Id)
-		// 	fmt.Println("pSid: ", v.Sid)
-		// 	fmt.Println("proposalLen: ", len(v.Proposal))
-		// 	fmt.Println("sigHashLen: ", len(v.Signature))
-		// 	rv := hex.EncodeToString(v.Proposal)
-		// 	fmt.Println("proposal: ", rv[len(rv)-100:len(rv)-1])
-		// }
 		for _, v := range resVectors {
 			value, ok := valueVectors[v.Id]
 			if ok {
@@ -253,7 +232,6 @@ func (acs *CommonSubsetImpl) controller(task string) {
 				fmt.Println("len(valueVectors): ", len(valueVectors))
 				fmt.Println("loss value from node: ", v.Id)
 			}
-
 		}
 		fmt.Println("resTxs:", resTxs)
 		err = acs.ProcessProposal(resTxs)
@@ -266,48 +244,6 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		if acs.round < ROUNDSUM {
 			go acs.startNewInstance()
 		}
-
-	// case "restartWithLeaderProposal":
-	// 	fmt.Println("")
-	// 	fmt.Println("replica: ", acs.ID)
-	// 	fmt.Println("sid: ", acs.Sid)
-	// 	fmt.Println("---------------- [NEXT_l_1] -----------------")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                 restart                   -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                 leader                    -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("---------------- [NEXT_l_2] -----------------")
-	// 	vector := acs.mvba.getLeaderVector()
-	// 	acs.Sid = acs.Sid + 1
-	// 	go acs.mvba.startSpeedMvba(vector.Proposal)
-	// case "restart":
-	// 	fmt.Println("")
-	// 	fmt.Println("replica: ", acs.ID)
-	// 	fmt.Println("sid: ", acs.Sid)
-	// 	fmt.Println("---------------- [NEXT_l_1] -----------------")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                 restart                   -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                  owner                    -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("-                                           -")
-	// 	fmt.Println("---------------- [NEXT_l_2] -----------------")
-	// 	proposal := acs.mvba.getProposal()
-	// 	acs.Sid = acs.Sid + 1
-	// 	//signature := acs.mvba.getSignature()
-	// 	go acs.mvba.startSpeedMvba(proposal)
 	default:
 		logger.Warn("Receive unsupported task signal")
 	}
@@ -438,33 +374,36 @@ func (acs *CommonSubsetImpl) broadcastPbFinal() {
 	acs.MsgEntrance <- pbFinalMsg
 }
 
-func (acs *CommonSubsetImpl) insertValue(senderId int, senderRound int, senderProposal []byte) {
-	_, ok := acs.valueVectors[senderRound]
+// Insert acs value in valueVectors
+func (acs *CommonSubsetImpl) insertValue(id int, round int, proposal []byte) {
+	_, ok := acs.valueVectors[round]
 	if !ok {
 		roundValueVectors := make(map[int][]byte)
-		acs.valueVectors[senderRound] = roundValueVectors
+		acs.valueVectors[round] = roundValueVectors
 	}
-	_, ok = acs.valueVectors[senderRound][senderId]
+	_, ok = acs.valueVectors[round][id]
 	if !ok {
-		acs.valueVectors[senderRound][senderId] = senderProposal
+		acs.valueVectors[round][id] = proposal
 	}
 }
 
-func (acs *CommonSubsetImpl) insertMsg(senderRound int, senderSid int, msg *pb.Msg) {
-	_, ok := acs.msgCache[senderRound]
+// Insert future messages with round and sid in msgCache
+func (acs *CommonSubsetImpl) insertMsg(round int, sid int, msg *pb.Msg) {
+	_, ok := acs.msgCache[round]
 	if !ok {
 		roundMsgCache := make(map[int][]*pb.Msg)
-		acs.msgCache[senderRound] = roundMsgCache
+		acs.msgCache[round] = roundMsgCache
 	}
-	msgList, ok := acs.msgCache[senderRound][senderSid]
+	msgList, ok := acs.msgCache[round][sid]
 	if !ok {
 		initMsgList := []*pb.Msg{msg}
-		acs.msgCache[senderRound][senderSid] = initMsgList
+		acs.msgCache[round][sid] = initMsgList
 	} else {
 		msgList = append(msgList, msg)
 	}
 }
 
+// Take out messages with round and sid from msgCache 
 func (acs *CommonSubsetImpl) getMsgFromCache(round int, sid int) []*pb.Msg {
 	roundMsgCache, ok := acs.msgCache[round]
 	if !ok {
