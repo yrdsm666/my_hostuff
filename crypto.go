@@ -4,7 +4,6 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
-	"math/big"
 
 	"github.com/niclabs/tcrsa"
 )
@@ -47,11 +46,11 @@ func CreateFullSignature(documentHash []byte, partSigs tcrsa.SigShareList, publi
 	if err != nil {
 		return nil, err
 	}
-	if len(signature) < 256 {
-		b := big.NewInt(0)
-		b.SetBytes(signature)
-		signature = b.FillBytes(make([]byte, 256))
-	}
+	// if len(signature) < 256 {
+	// 	b := big.NewInt(0)
+	// 	b.SetBytes(signature)
+	// 	signature = b.FillBytes(make([]byte, 256))
+	// }
 	return signature, nil
 }
 

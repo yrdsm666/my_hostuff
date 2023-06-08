@@ -42,8 +42,8 @@ type CommonCoinImpl struct {
 	DocumentHash []byte
 	Coin         tcrsa.Signature
 
-	lock         sync.Mutex
-	waitstart    *sync.Cond
+	lock      sync.Mutex
+	waitstart *sync.Cond
 }
 
 func NewCommonCoin(acs *CommonSubsetImpl) *CommonCoinImpl {
@@ -62,7 +62,7 @@ func (cc *CommonCoinImpl) startCommonCoin(sidStr string, sid int) {
 	cc.coinShares = make([]*tcrsa.SigShare, 0)
 	cc.sidStr = sidStr
 	cc.sid = sid
-	
+
 	id := int(cc.acs.ID)
 
 	cc.DocumentHash, _ = go_hotstuff.CreateDocumentHash([]byte(cc.sidStr), cc.acs.Config.PublicKey)
@@ -91,13 +91,13 @@ func (cc *CommonCoinImpl) startCommonCoin(sidStr string, sid int) {
 }
 
 func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
-	if cc.complete == true {
+	if cc.complete {
 		return
 	}
 
 	// If common coin has not yet started, wait common coin start
 	cc.lock.Lock()
-	if cc.start == false {
+	if !cc.start {
 		logger.Warn("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [CC] wait common coin start")
 		cc.waitstart.Wait()
 	}
@@ -110,11 +110,11 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 		senderRound := int(coinShare.Round)
 		senderSid := int(coinShare.Sid)
 		logger.WithFields(logrus.Fields{
-			"senderId":        senderId,
-			"senderRound":  senderRound,
-			"senderSid":       senderSid,
+			"senderId":    senderId,
+			"senderRound": senderRound,
+			"senderSid":   senderSid,
 		}).Info("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [CC] Get share msg")
-		
+
 		partSig := &tcrsa.SigShare{}
 		err := json.Unmarshal(coinShare.PartialSig, partSig)
 		if err != nil {
@@ -136,7 +136,7 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 			signature, err := go_hotstuff.CreateFullSignature([]byte(cc.sidStr), cc.coinShares, cc.acs.Config.PublicKey)
 			if err != nil {
 				logger.WithFields(logrus.Fields{
-					"error":        err.Error(),
+					"error": err.Error(),
 				}).Error("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [CC] CoinShare: create signature failed!")
 				return
 			}
@@ -144,14 +144,13 @@ func (cc *CommonCoinImpl) handleCommonCoinMsg(msg *pb.Msg) {
 			cc.complete = true
 			cc.acs.controller("getCoin")
 		}
-		break
 	default:
 		logger.Warn("[CC] Receive unsupported msg")
 	}
 }
 
 func (cc *CommonCoinImpl) getCoin() tcrsa.Signature {
-	if cc.complete == false {
+	if !cc.complete {
 		logger.Error("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [cc] Common coin is not complet")
 		return nil
 	}

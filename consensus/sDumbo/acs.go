@@ -30,19 +30,19 @@ var logger = logging.GetLogger()
 type CommonSubsetImpl struct {
 	consensus.AsynchronousImpl
 
-	round      int
-	proposal   []byte
+	round    int
+	proposal []byte
 
-	cancel     context.CancelFunc
-	taskPhase  string  
+	cancel    context.CancelFunc
+	taskPhase string
 
 	// ACS components
 	proBroadcast ProvableBroadcast // PB
-	mvba         SpeedMvba  // MVBA
+	mvba         SpeedMvba         // MVBA
 
 	inputVectors []Vector // MVBA input
 
-	valueVectors map[int]map[int][]byte // Cache of proposed values of nodes for each round, round -> id -> value
+	valueVectors map[int]map[int][]byte    // Cache of proposed values of nodes for each round, round -> id -> value
 	msgCache     map[int]map[int][]*pb.Msg // Cache of future messages of sids for each round, round -> sid -> msg
 }
 
@@ -54,11 +54,11 @@ const (
 	PREVOTE_PHASE string = "PREVOTE"
 	VOTE_PHASE    string = "VOTE"
 
-	UNLOCKSTR     string = "UNLOCKED"
-	NULLSTR       string = "NULL_NO_SID_"
-	COINSHARE     string = "COIN_SHARE_WITH_SID_"
+	UNLOCKSTR string = "UNLOCKED"
+	NULLSTR   string = "NULL_NO_SID_"
+	COINSHARE string = "COIN_SHARE_WITH_SID_"
 
-	ROUNDSUM      int = 100
+	ROUNDSUM int = 100
 )
 
 // only variables with uppercase letters can be converted to JSON
@@ -74,10 +74,10 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	logger.Debugf("[ACS] Start Common Subset.")
 	ctx, cancel := context.WithCancel(context.Background())
 	acs := &CommonSubsetImpl{
-		round:    0,
+		round:  0,
 		cancel: cancel,
 	}
-	
+
 	acs.MsgEntrance = make(chan *pb.Msg)
 	acs.ID = uint32(id)
 
@@ -304,16 +304,16 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 	if senderRound < acs.round {
 		// Ignore messages from old sid or round
 		logger.WithFields(logrus.Fields{
-			"senderId":  senderId,
-			"senderRound":  senderRound,
+			"senderId":    senderId,
+			"senderRound": senderRound,
 		}).Warn("[p_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get old sid of Pbfinal msg")
 		return
 	} else if senderRound > acs.round {
 		// Save messages from future sid or round
 		acs.insertMsg(senderRound, 0, msg)
 		logger.WithFields(logrus.Fields{
-			"senderId":  senderId,
-			"senderRound":  senderRound,
+			"senderId":    senderId,
+			"senderRound": senderRound,
 		}).Warn("[p_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get future sid of Pbfinal msg and save it")
 		return
 	}
@@ -324,8 +324,8 @@ func (acs *CommonSubsetImpl) handlePbFinal(msg *pb.Msg) {
 	}
 
 	logger.WithFields(logrus.Fields{
-		"senderId":  senderId,
-		"senderRound":  senderRound,
+		"senderId":    senderId,
+		"senderRound": senderRound,
 	}).Info("[p_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] Get PbFinal msg")
 
 	// Parse proposal and signature of message
@@ -394,16 +394,16 @@ func (acs *CommonSubsetImpl) insertMsg(round int, sid int, msg *pb.Msg) {
 		roundMsgCache := make(map[int][]*pb.Msg)
 		acs.msgCache[round] = roundMsgCache
 	}
-	msgList, ok := acs.msgCache[round][sid]
+	_, ok = acs.msgCache[round][sid]
 	if !ok {
 		initMsgList := []*pb.Msg{msg}
 		acs.msgCache[round][sid] = initMsgList
 	} else {
-		msgList = append(msgList, msg)
+		acs.msgCache[round][sid] = append(acs.msgCache[round][sid], msg)
 	}
 }
 
-// Take out messages with round and sid from msgCache 
+// Take out messages with round and sid from msgCache
 func (acs *CommonSubsetImpl) getMsgFromCache(round int, sid int) []*pb.Msg {
 	roundMsgCache, ok := acs.msgCache[round]
 	if !ok {
