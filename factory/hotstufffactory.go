@@ -1,13 +1,15 @@
 package factory
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/wjbbig/go-hotstuff/consensus"
 	"github.com/wjbbig/go-hotstuff/consensus/basic"
 	"github.com/wjbbig/go-hotstuff/consensus/chained"
 	"github.com/wjbbig/go-hotstuff/consensus/eventdriven"
+	"github.com/wjbbig/go-hotstuff/consensus/peasecod"
 	"github.com/wjbbig/go-hotstuff/consensus/sDumbo"
-	"strconv"
-	"strings"
 )
 
 func HotStuffFactory(networkType string, id int) consensus.HotStuff {
@@ -26,10 +28,13 @@ func ACSFactory(networkType string, id int) consensus.Asynchronous {
 	return sDumbo.NewCommonSubset(id)
 }
 
+func PeaFactory(networkType string, id int) consensus.Parallel {
+	return peasecod.NewPeasecod(id)
+}
+
 func handleMethod(arg string) string {
 	split := strings.Split(arg, ",")
 	arg1, _ := strconv.Atoi(split[0])
 	arg2, _ := strconv.Atoi(split[1])
 	return strconv.Itoa(arg1 + arg2)
 }
-

@@ -84,10 +84,11 @@ func (pea *PeasecodImpl) receiveMsg(ctx context.Context) {
 func (pea *PeasecodImpl) handleMsg(msg *pb.Msg) {
 	switch msg.Payload.(type) {
 	case *pb.Msg_Request:
-		request := msg.GetRequest()
-		// logger.WithField("content", request.String()).Debug("[pea] Get request msg.")
-		// put the cmd into the cmdset
-		pea.TxnSet.Add(request.Cmd)
+		// request := msg.GetRequest()
+		// // logger.WithField("content", request.String()).Debug("[pea] Get request msg.")
+		// // put the cmd into the cmdset
+		// pea.TxnSet.Add(request.Cmd)
+		pea.hotstuff.GetMsgEntrance() <- msg
 	case *pb.Msg_Prepare:
 		pea.hotstuff.GetMsgEntrance() <- msg
 	case *pb.Msg_PrepareVote:

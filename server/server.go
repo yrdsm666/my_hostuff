@@ -60,7 +60,7 @@ func start(networkType string, id int) {
 		// start server
 		rpcServer.Serve(listen)
 	} else if networkType == "pea" {
-		hotStuffService := consensus.NewParallelService(factory.ACSFactory(networkType, id))
+		hotStuffService := consensus.NewParallelService(factory.PeaFactory(networkType, id))
 		// register service
 		proto.RegisterHotStuffServiceServer(rpcServer, hotStuffService)
 		// get node port
