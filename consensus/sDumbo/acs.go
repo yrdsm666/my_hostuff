@@ -104,7 +104,7 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	// valueVectors: round -> id -> []byte
 	acs.valueVectors = make(map[int]map[int][]byte)
 
-	// msgCache: round -> sid -> []*pb.Ms
+	// msgCache: round -> sid -> []*pb.Msg
 	acs.msgCache = make(map[int]map[int][]*pb.Msg)
 
 	go acs.receiveMsg(ctx)
