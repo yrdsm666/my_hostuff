@@ -15,6 +15,12 @@ import (
 	// "fmt"
 )
 
+type PathResult struct {
+	Block *pb.Block
+	Proof *pb.QuorumCert
+	Flag  string
+}
+
 // common hotstuff func defined in the paper
 type Parallel interface {
 	//Msg(msgType pb.MsgType, id int, round int, sid int, proposal []byte, signatureByte []byte) *pb.Msg

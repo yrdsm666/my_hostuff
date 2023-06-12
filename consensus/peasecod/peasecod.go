@@ -26,13 +26,20 @@ import (
 
 var logger = logging.GetLogger()
 
+// type PeasecodParameter struct {
+// 	TxnSet      go_hotstuff.CmdSet
+// 	ResEntrance chan *pb.Msg
+// }
+
 type PeasecodImpl struct {
 	consensus.ParallelImpl
 
-	epoch    int
-	proposal []byte
+	epoch int
+	// proposal []byte
 
-	hotstuff consensus.HotStuff
+	hotstuff    consensus.HotStuff
+	latestBlock consensus.PathResult
+	ResEntrance chan *consensus.PathResult
 
 	cancel context.CancelFunc
 }
@@ -46,6 +53,7 @@ func NewPeasecod(id int) *PeasecodImpl {
 	}
 
 	pea.MsgEntrance = make(chan *pb.Msg)
+	pea.ResEntrance = make(chan *consensus.PathResult)
 	pea.ID = uint32(id)
 
 	// create txn cache
@@ -63,7 +71,7 @@ func NewPeasecod(id int) *PeasecodImpl {
 	}
 	pea.Config.PrivateKey = privateKey
 
-	pea.hotstuff = eventdriven.NewEventDrivenHotStuff(id, handleMethod)
+	pea.hotstuff = eventdriven.NewEventDrivenHotStuff(id, handleMethod, pea.TxnSet, pea.ResEntrance)
 
 	go pea.receiveMsg(ctx)
 

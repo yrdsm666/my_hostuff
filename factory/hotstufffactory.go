@@ -19,7 +19,7 @@ func HotStuffFactory(networkType string, id int) consensus.HotStuff {
 	case "chained":
 		return chained.NewChainedHotStuff(id, handleMethod)
 	case "event-driven":
-		return eventdriven.NewEventDrivenHotStuff(id, handleMethod)
+		return eventdriven.NewEventDrivenHotStuff(id, handleMethod, nil, nil)
 	}
 	return nil
 }

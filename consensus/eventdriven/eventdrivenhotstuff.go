@@ -6,7 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+
 	// "github.com/golang/protobuf/proto"
+	"os"
+	"strconv"
+	"sync"
+
 	"github.com/niclabs/tcrsa"
 	"github.com/sirupsen/logrus"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -15,9 +20,6 @@ import (
 	"github.com/wjbbig/go-hotstuff/consensus"
 	"github.com/wjbbig/go-hotstuff/logging"
 	pb "github.com/wjbbig/go-hotstuff/proto"
-	"os"
-	"strconv"
-	"sync"
 	// "fmt"
 )
 
@@ -53,16 +55,19 @@ type EventDrivenHotStuffImpl struct {
 	pendingUpdate chan *pb.Block
 	cancel        context.CancelFunc
 	eventChannels []chan Event
+
+	peaWork     bool
+	resEntrance chan<- *consensus.PathResult
 }
 
-type msgData struct{
-	msgType    string
-	viewNum    uint64
-	nodeHash   []byte
+type msgData struct {
+	msgType  string
+	viewNum  uint64
+	nodeHash []byte
 }
 
-func NewEventDrivenHotStuff(id int, handleMethod func(string) string) *EventDrivenHotStuffImpl {
-	logger.Debugf("[replica_"+strconv.Itoa(id)+"] Generate genesis block")
+func NewEventDrivenHotStuff(id int, handleMethod func(string) string, TxnSet go_hotstuff.CmdSet, resEntrance chan<- *consensus.PathResult) *EventDrivenHotStuffImpl {
+	logger.Debugf("[replica_" + strconv.Itoa(id) + "] Generate genesis block")
 	genesisBlock := consensus.GenerateGenesisBlock()
 	blockStore := go_hotstuff.NewBlockStorageImpl(strconv.Itoa(id))
 	err := blockStore.Put(genesisBlock)
@@ -91,8 +96,18 @@ func NewEventDrivenHotStuff(id int, handleMethod func(string) string) *EventDriv
 	ehs.ID = uint32(id)
 	logger.WithField("replicaID", id).Debug("[EVENT-DRIVEN HOTSTUFF] Init block storage.")
 	ehs.BlockStorage = blockStore
-	logger.WithField("replicaID", id).Debug("[EVENT-DRIVEN HOTSTUFF] Init command cache.")
-	ehs.CmdSet = go_hotstuff.NewCmdSet()
+
+	if TxnSet != nil {
+		logger.WithField("replicaID", id).Debug("[EVENT-DRIVEN HOTSTUFF] Inherit command cache.")
+		ehs.peaWork = true
+		ehs.CmdSet = TxnSet
+		ehs.resEntrance = resEntrance
+	} else {
+		logger.WithField("replicaID", id).Debug("[EVENT-DRIVEN HOTSTUFF] Init command cache.")
+		ehs.peaWork = false
+		ehs.CmdSet = go_hotstuff.NewCmdSet()
+		// ehs.resEntrance = make
+	}
 
 	// read config
 	ehs.Config = config.HotStuffConfig{}
@@ -195,19 +210,19 @@ func (ehs *EventDrivenHotStuffImpl) handleMsg(msg *pb.Msg) {
 	case *pb.Msg_Prepare:
 		prepareMsg := msg.GetPrepare()
 		// Ignore messages from old views
-		if prepareMsg.ViewNum < ehs.View.ViewNum{
+		if prepareMsg.ViewNum < ehs.View.ViewNum {
 			return
 		}
 
 		partSig, err := ehs.OnReceiveProposal(prepareMsg)
-		// node := 
+		// node :=
 		if err != nil {
 			logger.Error(err.Error())
 			break
 		}
 		// view change
 		ehs.advanceView(prepareMsg.ViewNum)
-		
+
 		ehs.View.Primary = ehs.GetLeader()
 
 		partSigBytes, _ := json.Marshal(partSig)
@@ -231,29 +246,29 @@ func (ehs *EventDrivenHotStuffImpl) handleMsg(msg *pb.Msg) {
 		newViewMsg := msg.GetNewView()
 		// wait for 2f+1 votes
 		ehs.CurExec.HighQC = append(ehs.CurExec.HighQC, newViewMsg.PrepareQC)
-		if len(ehs.CurExec.HighQC) == 2*ehs.Config.F + 1 {
+		if len(ehs.CurExec.HighQC) == 2*ehs.Config.F+1 {
 			for _, cert := range ehs.CurExec.HighQC {
 				if cert.ViewNum > ehs.GetHighQC().ViewNum {
 					ehs.qcHigh = cert
 				}
 			}
-			// If a node does not timeout in previous view, 
-			// but still receives enough new-view messages, 
-			// then the view number of this node is not the latest (because no timeout triggered), 
+			// If a node does not timeout in previous view,
+			// but still receives enough new-view messages,
+			// then the view number of this node is not the latest (because no timeout triggered),
 			// and it should try to increase the view number
 			// ehs.advanceView(msg.ViewNum)
-			if newViewMsg.ViewNum > ehs.View.ViewNum{
+			if newViewMsg.ViewNum > ehs.View.ViewNum {
 				mu.Lock()
 				ehs.View.ViewNum = newViewMsg.ViewNum
 				mu.Unlock()
-				logger.Info("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] advanceView by newview success!")
+				logger.Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] advanceView by newview success!")
 
 			}
 			ehs.pacemaker.OnReceiverNewView(ehs.qcHigh)
 		}
 		break
 	default:
-		logger.Warn("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] Receive unsupported msg")
+		logger.Warn("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] Receive unsupported msg")
 	}
 }
 
@@ -283,7 +298,7 @@ func (ehs *EventDrivenHotStuffImpl) Update(block *pb.Block) {
 	ehs.lock.Lock()
 	defer ehs.lock.Unlock()
 
-	logger.WithField("blockHash", hex.EncodeToString(block1.Hash)).Info("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] PRE COMMIT.")
+	logger.WithField("blockHash", hex.EncodeToString(block1.Hash)).Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] PRE COMMIT.")
 	// pre-commit block1
 	ehs.pacemaker.UpdateHighQC(block.Justify)
 
@@ -297,7 +312,7 @@ func (ehs *EventDrivenHotStuffImpl) Update(block *pb.Block) {
 
 	if block2.Height > ehs.bLock.Height {
 		ehs.bLock = block2
-		logger.WithField("blockHash", hex.EncodeToString(block2.Hash)).Info("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] COMMIT.")
+		logger.WithField("blockHash", hex.EncodeToString(block2.Hash)).Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] COMMIT.")
 	}
 
 	block3, err := ehs.BlockStorage.BlockOf(block2.Justify)
@@ -309,9 +324,13 @@ func (ehs *EventDrivenHotStuffImpl) Update(block *pb.Block) {
 	}
 
 	if bytes.Equal(block1.ParentHash, block2.Hash) && bytes.Equal(block2.ParentHash, block3.Hash) {
-		logger.WithField("blockHash", hex.EncodeToString(block3.Hash)).Info("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] DECIDE.")
+		logger.WithField("blockHash", hex.EncodeToString(block3.Hash)).Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] DECIDE.")
 		ehs.OnCommit(block3)
 		ehs.bExec = block3
+	}
+
+	if ehs.peaWork {
+		ehs.commitForPea(block3, block2.Justify)
 	}
 }
 
@@ -326,14 +345,14 @@ func (ehs *EventDrivenHotStuffImpl) OnCommit(block *pb.Block) {
 				logger.WithField("error", err.Error()).Fatal("Update block state failed")
 			}
 		}()
-		logger.WithField("blockHash", hex.EncodeToString(block.Hash)).Info("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] EXEC.")
+		logger.WithField("blockHash", hex.EncodeToString(block.Hash)).Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] EXEC.")
 		ehs.ProcessProposal(block.Commands)
 	}
 }
 
 func (ehs *EventDrivenHotStuffImpl) OnReceiveProposal(msg *pb.Prepare) (*tcrsa.SigShare, error) {
 	newBlock := msg.CurProposal
-	logger.WithField("blockHash", hex.EncodeToString(newBlock.Hash)).Info("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] OnReceiveProposal.")
+	logger.WithField("blockHash", hex.EncodeToString(newBlock.Hash)).Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnReceiveProposal.")
 	// store the block
 	err := ehs.BlockStorage.Put(newBlock)
 	if err != nil {
@@ -347,7 +366,7 @@ func (ehs *EventDrivenHotStuffImpl) OnReceiveProposal(msg *pb.Prepare) (*tcrsa.S
 		logger.WithFields(logrus.Fields{
 			"blockHeight": newBlock.Height,
 			"vHeight":     ehs.vHeight,
-		}).Warn("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] OnReceiveProposal: Block height less than vHeight.")
+		}).Warn("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnReceiveProposal: Block height less than vHeight.")
 		return nil, errors.New("Block was not accepted.")
 	}
 	safe := false
@@ -355,7 +374,7 @@ func (ehs *EventDrivenHotStuffImpl) OnReceiveProposal(msg *pb.Prepare) (*tcrsa.S
 	if qcBlock != nil && qcBlock.Height > ehs.bLock.Height {
 		safe = true
 	} else {
-		logger.Warn("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] OnReceiveProposal: liveness condition failed.")
+		logger.Warn("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnReceiveProposal: liveness condition failed.")
 		b := newBlock
 		ok := true
 		for ok && b.Height > ehs.bLock.Height+1 {
@@ -367,16 +386,16 @@ func (ehs *EventDrivenHotStuffImpl) OnReceiveProposal(msg *pb.Prepare) (*tcrsa.S
 		if ok && bytes.Equal(b.ParentHash, ehs.bLock.Hash) {
 			safe = true
 		} else {
-			logger.Warn("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] OnReceiveProposal: safety condition failed.")
+			logger.Warn("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnReceiveProposal: safety condition failed.")
 		}
 	}
 	// unsafe, return
 	if !safe {
 		ehs.lock.Unlock()
-		logger.Warn("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] OnReceiveProposal: Block not safe.")
+		logger.Warn("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnReceiveProposal: Block not safe.")
 		return nil, errors.New("Block was not accepted.")
 	}
-	logger.Debug("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] OnReceiveProposal: Accepted block.")
+	logger.Debug("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnReceiveProposal: Accepted block.")
 	// update vHeight
 	ehs.vHeight = newBlock.Height
 	ehs.CmdSet.MarkProposed(newBlock.Commands...)
@@ -384,12 +403,12 @@ func (ehs *EventDrivenHotStuffImpl) OnReceiveProposal(msg *pb.Prepare) (*tcrsa.S
 	ehs.waitProposal.Broadcast()
 	ehs.emitEvent(ReceiveProposal)
 	ehs.pendingUpdate <- newBlock
-	
+
 	ehs.CurExec.DocumentHash = ehs.getMsgDataHash(msg.ViewNum, newBlock.Hash)
 	ehs.CurExec.Node = newBlock
 	partSig, err := go_hotstuff.TSign(ehs.CurExec.DocumentHash, ehs.Config.PrivateKey, ehs.Config.PublicKey)
 	if err != nil {
-		logger.WithField("error", err.Error()).Warn("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] OnReceiveProposal: signature not verified!")
+		logger.WithField("error", err.Error()).Warn("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnReceiveProposal: signature not verified!")
 	}
 	return partSig, nil
 }
@@ -406,9 +425,9 @@ func (ehs *EventDrivenHotStuffImpl) OnReceiveVote(msg *pb.PrepareVote) {
 	// 	return
 	// }
 
-	logger.Info("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] OnReceiveVote")
+	logger.Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnReceiveVote")
 	// Ignore messages from old views
-	if msg.ViewNum < ehs.View.ViewNum{
+	if msg.ViewNum < ehs.View.ViewNum {
 		return
 	}
 	partSig := &tcrsa.SigShare{}
@@ -432,16 +451,16 @@ func (ehs *EventDrivenHotStuffImpl) OnReceiveVote(msg *pb.PrepareVote) {
 		ehs.lock.Lock()
 		ehs.pacemaker.UpdateHighQC(qc)
 		ehs.lock.Unlock()
-		// If a node does not receive a prepare message from the previous leader, 
-		// but still receives enough voting messages, 
-		// then the view number of this node is not the latest (because no prepare message has been received), 
+		// If a node does not receive a prepare message from the previous leader,
+		// but still receives enough voting messages,
+		// then the view number of this node is not the latest (because no prepare message has been received),
 		// and it should try to increase the view number
 		// ehs.advanceView(msg.ViewNum)
-		if msg.ViewNum > ehs.View.ViewNum{
+		if msg.ViewNum > ehs.View.ViewNum {
 			mu.Lock()
 			ehs.View.ViewNum = msg.ViewNum
 			mu.Unlock()
-			logger.Info("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] advanceView by vote success!")
+			logger.Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] advanceView by vote success!")
 		}
 		ehs.CurExec = consensus.NewCurProposal()
 		ehs.emitEvent(QCFinish)
@@ -449,7 +468,7 @@ func (ehs *EventDrivenHotStuffImpl) OnReceiveVote(msg *pb.PrepareVote) {
 }
 
 func (ehs *EventDrivenHotStuffImpl) OnPropose() {
-	logger.Info("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] OnPropose")
+	logger.Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnPropose")
 	ehs.BatchTimeChan.SoftStartTimer()
 	cmds := ehs.CmdSet.GetFirst(int(ehs.Config.BatchSize))
 	if len(cmds) != 0 {
@@ -466,20 +485,20 @@ func (ehs *EventDrivenHotStuffImpl) OnPropose() {
 	// broadcast
 	err := ehs.Broadcast(msg)
 	if err != nil {
-		logger.WithField("error", err.Error()).Warn("[replica_"+strconv.Itoa(int(ehs.ID))+"] Broadcast proposal failed.")
+		logger.WithField("error", err.Error()).Warn("[replica_" + strconv.Itoa(int(ehs.ID)) + "] Broadcast proposal failed.")
 	}
 }
 
 // expectBlock looks for a block with the given Hash, or waits for the next proposal to arrive
 // NOTE: ehs.lock must be locked when calling this function !!!
-func (ehs *EventDrivenHotStuffImpl) expectBlock(hash [] byte) (*pb.Block, error) {
+func (ehs *EventDrivenHotStuffImpl) expectBlock(hash []byte) (*pb.Block, error) {
 	block, err := ehs.BlockStorage.Get(hash)
 	if err == nil {
 		return block, nil
 	} else {
-		logger.WithField("error", err.Error()).Warn("[replica_"+strconv.Itoa(int(ehs.ID))+"] expect block failed.")
+		logger.WithField("error", err.Error()).Warn("[replica_" + strconv.Itoa(int(ehs.ID)) + "] expect block failed.")
 	}
-	
+
 	ehs.waitProposal.Wait()
 	return ehs.BlockStorage.Get(hash)
 }
@@ -500,9 +519,9 @@ func (ehs *EventDrivenHotStuffImpl) createProposal(cmds []string) *pb.Block {
 
 func (ehs *EventDrivenHotStuffImpl) getMsgDataHash(viewNum uint64, hash []byte) []byte {
 	data := &msgData{
-		msgType:    "prepare",
-		viewNum:    viewNum,
-		nodeHash:   hash,
+		msgType:  "prepare",
+		viewNum:  viewNum,
+		nodeHash: hash,
 	}
 	marshal, _ := json.Marshal(data)
 	documentHash, _ := go_hotstuff.CreateDocumentHash(marshal, ehs.Config.PublicKey)
@@ -511,10 +530,19 @@ func (ehs *EventDrivenHotStuffImpl) getMsgDataHash(viewNum uint64, hash []byte) 
 
 func (ehs *EventDrivenHotStuffImpl) advanceView(viewNum uint64) {
 	mu.Lock()
-	if viewNum >= ehs.View.ViewNum{
+	if viewNum >= ehs.View.ViewNum {
 		ehs.View.ViewNum = viewNum
-		ehs.View.ViewNum ++
-		logger.Info("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] advanceView success!")
+		ehs.View.ViewNum++
+		logger.Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] advanceView success!")
 	}
 	mu.Unlock()
+}
+
+func (ehs *EventDrivenHotStuffImpl) commitForPea(block *pb.Block, qc *pb.QuorumCert) {
+	res := &consensus.PathResult{
+		Block: block,
+		Proof: qc,
+		Flag:  "",
+	}
+	ehs.resEntrance <- res
 }
