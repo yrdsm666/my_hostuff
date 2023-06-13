@@ -25,7 +25,7 @@ func HotStuffFactory(networkType string, id int) consensus.HotStuff {
 }
 
 func ACSFactory(networkType string, id int) consensus.Asynchronous {
-	return sDumbo.NewCommonSubset(id)
+	return sDumbo.NewCommonSubset(id, 0)
 }
 
 func PeaFactory(networkType string, id int) consensus.Parallel {

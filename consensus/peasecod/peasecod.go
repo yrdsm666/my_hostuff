@@ -1,6 +1,7 @@
 package peasecod
 
 import (
+	"bytes"
 	"context"
 
 	//"errors"
@@ -8,6 +9,7 @@ import (
 
 	//"github.com/syndtr/goleveldb/leveldb"
 
+	"github.com/niclabs/tcrsa"
 	go_hotstuff "github.com/wjbbig/go-hotstuff"
 	"github.com/wjbbig/go-hotstuff/config"
 	"github.com/wjbbig/go-hotstuff/consensus"
@@ -15,7 +17,6 @@ import (
 	"github.com/wjbbig/go-hotstuff/logging"
 	pb "github.com/wjbbig/go-hotstuff/proto"
 
-	// "github.com/wjbbig/go-hotstuff/consensus/sDumbo"
 	//"os"
 	"strconv"
 	"strings"
@@ -34,12 +35,15 @@ var logger = logging.GetLogger()
 type PeasecodImpl struct {
 	consensus.ParallelImpl
 
-	epoch int
-	// proposal []byte
+	epoch       int
+	latestBlock *consensus.FastResult
+	asyncMode   bool
+	asyncProof  tcrsa.Signature
+	maxProof    *pb.QuorumCert
+	pcBlocks    *pb.Block
 
-	hotstuff    consensus.HotStuff
-	latestBlock *consensus.PathResult
-	ResEntrance chan *consensus.PathResult
+	hotstuff consensus.HotStuff
+	sDumbo   consensus.Asynchronous
 
 	cancel context.CancelFunc
 }
@@ -53,7 +57,8 @@ func NewPeasecod(id int) *PeasecodImpl {
 	}
 
 	pea.MsgEntrance = make(chan *pb.Msg)
-	pea.ResEntrance = make(chan *consensus.PathResult)
+	pea.FastPathRes = make(chan *consensus.FastResult)
+	pea.PessPathRes = make(chan *consensus.PessResult)
 	pea.ID = uint32(id)
 
 	// create txn cache
@@ -71,7 +76,14 @@ func NewPeasecod(id int) *PeasecodImpl {
 	}
 	pea.Config.PrivateKey = privateKey
 
-	pea.hotstuff = eventdriven.NewEventDrivenHotStuff(id, handleMethod, pea.TxnSet, pea.ResEntrance)
+	// init timer and stop it
+	peaTimeout := pea.Config.Timeout * 5
+	pea.TimeChan = go_hotstuff.NewTimer(peaTimeout)
+	pea.TimeChan.Init()
+
+	pea.asyncMode = false
+	pea.hotstuff = eventdriven.NewEventDrivenHotStuff(id, handleMethod, pea.TxnSet, pea.FastPathRes)
+	// pea.sDumbo = sDumbo.NewCommonSubset(id)
 
 	go pea.receiveMsg(ctx)
 	go pea.receiveRes(ctx)
@@ -95,8 +107,10 @@ func (pea *PeasecodImpl) receiveRes(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case res := <-pea.ResEntrance:
-			go pea.handleRes(res)
+		case res := <-pea.FastPathRes:
+			go pea.handleFastRes(res)
+		case res := <-pea.PessPathRes:
+			go pea.handlePessRes(res)
 		}
 	}
 }
@@ -137,12 +151,30 @@ func (pea *PeasecodImpl) handleMsg(msg *pb.Msg) {
 	}
 }
 
-func (pea *PeasecodImpl) handleRes(res *consensus.PathResult) {
-	if res.Flag == "hotstuff" {
-		pea.latestBlock = res
-		pea.ProcessProposal(res.Block.Commands)
-		logger.Info("Good work")
+func (pea *PeasecodImpl) handleFastRes(res *consensus.FastResult) {
+	pea.latestBlock = res
+	pea.ProcessProposal(res.Block.Commands)
+	pea.TimeChan.HardStartTimer()
+	logger.Info("Good work")
+}
+
+func (pea *PeasecodImpl) handlePessRes(res *consensus.PessResult) {
+
+}
+
+func (pea *PeasecodImpl) startPessPath() {
+	var flag string
+	if pea.maxProof == nil || (pea.maxProof != nil && bytes.Equal(pea.maxProof.BlockHash, pea.latestBlock.Proof.BlockHash)) {
+		flag = "continue"
+	} else {
+		flag = "stop"
 	}
+	pessInput := &consensus.PessResult{
+		Txn:   nil,
+		Proof: pea.latestBlock.Proof,
+		Flag:  flag,
+	}
+
 }
 
 func handleMethod(arg string) string {

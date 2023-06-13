@@ -44,6 +44,10 @@ type CommonSubsetImpl struct {
 
 	valueVectors map[int]map[int][]byte    // Cache of proposed values of nodes for each round, round -> id -> value
 	msgCache     map[int]map[int][]*pb.Msg // Cache of future messages of sids for each round, round -> sid -> msg
+
+	epoch       int
+	peaWork     bool
+	resEntrance chan<- *consensus.PessResult
 }
 
 const (
@@ -70,7 +74,7 @@ type Vector struct {
 	Signature tcrsa.Signature
 }
 
-func NewCommonSubset(id int) *CommonSubsetImpl {
+func NewCommonSubset(id int, epoch int, input *consensus.PessResult, TxnSet go_hotstuff.CmdSet, resEntrance chan<- *consensus.PessResult) *CommonSubsetImpl {
 	logger.Debugf("[ACS] Start Common Subset.")
 	ctx, cancel := context.WithCancel(context.Background())
 	acs := &CommonSubsetImpl{
@@ -79,11 +83,20 @@ func NewCommonSubset(id int) *CommonSubsetImpl {
 	}
 
 	acs.MsgEntrance = make(chan *pb.Msg)
+	acs.epoch = epoch
 	acs.ID = uint32(id)
 
-	// create txn cache
-	acs.TxnSet = go_hotstuff.NewCmdSet()
-	logger.WithField("replicaID", id).Debug("[ACS] Init command cache.")
+	if TxnSet != nil {
+		logger.WithField("replicaID", id).Debug("[ACS] Inherit command cache.")
+		acs.peaWork = true
+		acs.TxnSet = TxnSet
+		acs.resEntrance = resEntrance
+	} else {
+		// create txn cache
+		acs.peaWork = false
+		acs.TxnSet = go_hotstuff.NewCmdSet()
+		logger.WithField("replicaID", id).Debug("[ACS] Init command cache.")
+	}
 
 	// read config
 	acs.Config = config.HotStuffConfig{}

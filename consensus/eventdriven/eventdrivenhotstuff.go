@@ -57,7 +57,7 @@ type EventDrivenHotStuffImpl struct {
 	eventChannels []chan Event
 
 	peaWork     bool
-	resEntrance chan<- *consensus.PathResult
+	resEntrance chan<- *consensus.FastResult
 }
 
 type msgData struct {
@@ -66,7 +66,7 @@ type msgData struct {
 	nodeHash []byte
 }
 
-func NewEventDrivenHotStuff(id int, handleMethod func(string) string, TxnSet go_hotstuff.CmdSet, resEntrance chan<- *consensus.PathResult) *EventDrivenHotStuffImpl {
+func NewEventDrivenHotStuff(id int, handleMethod func(string) string, TxnSet go_hotstuff.CmdSet, resEntrance chan<- *consensus.FastResult) *EventDrivenHotStuffImpl {
 	logger.Debugf("[replica_" + strconv.Itoa(id) + "] Generate genesis block")
 	genesisBlock := consensus.GenerateGenesisBlock()
 	blockStore := go_hotstuff.NewBlockStorageImpl(strconv.Itoa(id))
@@ -544,10 +544,9 @@ func (ehs *EventDrivenHotStuffImpl) advanceView(viewNum uint64) {
 }
 
 func (ehs *EventDrivenHotStuffImpl) commitForPea(block *pb.Block, qc *pb.QuorumCert) {
-	res := &consensus.PathResult{
+	res := &consensus.FastResult{
 		Block: block,
 		Proof: qc,
-		Flag:  "hotstuff",
 	}
 	ehs.resEntrance <- res
 }

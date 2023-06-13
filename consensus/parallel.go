@@ -18,8 +18,13 @@ import (
 	// "fmt"
 )
 
-type PathResult struct {
+type FastResult struct {
 	Block *pb.Block
+	Proof *pb.QuorumCert
+}
+
+type PessResult struct {
+	Txn   []string
 	Proof *pb.QuorumCert
 	Flag  string
 }
@@ -38,9 +43,12 @@ type Parallel interface {
 
 type ParallelImpl struct {
 	ID          uint32
-	MsgEntrance chan *pb.Msg // receive msg
+	MsgEntrance chan *pb.Msg     // receive msg
+	FastPathRes chan *FastResult // receive reslut for fast path
+	PessPathRes chan *PessResult // receive reslut for pessimistic path
 	Config      config.HotStuffConfig
 	TxnSet      go_hotstuff.CmdSet
+	TimeChan    *go_hotstuff.Timer
 }
 
 // func (a *ParallelImpl) Msg(msgType pb.MsgType, id int, round int, sid int, proposal []byte, signatureByte []byte) *pb.Msg {
@@ -75,6 +83,8 @@ type ParallelImpl struct {
 
 func (a *ParallelImpl) SafeExit() {
 	close(a.MsgEntrance)
+	close(a.FastPathRes)
+	close(a.PessPathRes)
 }
 
 func (a *ParallelImpl) GetMsgEntrance() chan<- *pb.Msg {
