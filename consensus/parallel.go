@@ -39,13 +39,14 @@ type Parallel interface {
 	Broadcast(msg *pb.Msg) error
 	Unicast(address string, msg *pb.Msg) error
 	ProcessProposal(cmds []string) error
+	TimeoutMsg(id int, epoch int, partialSig []byte) *pb.Msg
 }
 
 type ParallelImpl struct {
 	ID          uint32
-	MsgEntrance chan *pb.Msg     // receive msg
-	FastPathRes chan *FastResult // receive reslut for fast path
-	PessPathRes chan *PessResult // receive reslut for pessimistic path
+	MsgEntrance chan *pb.Msg       // receive msg
+	FastPathRes chan *FastResult   // receive reslut for fast path
+	PessPathRes chan *[]PessResult // receive reslut for pessimistic path
 	Config      config.HotStuffConfig
 	TxnSet      go_hotstuff.CmdSet
 	TimeChan    *go_hotstuff.Timer
@@ -154,6 +155,16 @@ func (a *ParallelImpl) ProcessProposal(cmds []string) error {
 	}
 	a.TxnSet.Remove(cmds...)
 	return nil
+}
+
+func (a *ParallelImpl) TimeoutMsg(id int, epoch int, partialSig []byte) *pb.Msg {
+	msg := &pb.Msg{}
+	msg.Payload = &pb.Msg_Timeout{Timeout: &pb.Timeout{
+		Id:         uint64(id),
+		Epoch:      uint64(epoch),
+		PartialSig: partialSig,
+	}}
+	return msg
 }
 
 func handleMethod(arg string) string {

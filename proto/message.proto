@@ -25,6 +25,7 @@ message Msg {
     Halt halt = 17;
     PreVote preVote = 18;
     Vote vote = 19;
+    Timeout timeout = 20;
   }
 //   string senderAddress = 11;
 }
@@ -161,6 +162,12 @@ message Vote {
   bytes proposal = 6;
   bytes signature = 7;
   bytes partialSig = 8;
+}
+
+message Timeout {
+  uint64 id = 1;
+  uint64 epoch = 2;
+  bytes partialSig = 3;
 }
 
 service HotStuffService {

@@ -14,6 +14,7 @@ import (
 	"github.com/wjbbig/go-hotstuff/config"
 	"github.com/wjbbig/go-hotstuff/consensus"
 	"github.com/wjbbig/go-hotstuff/consensus/eventdriven"
+	"github.com/wjbbig/go-hotstuff/consensus/sDumbo"
 	"github.com/wjbbig/go-hotstuff/logging"
 	pb "github.com/wjbbig/go-hotstuff/proto"
 
@@ -43,7 +44,7 @@ type PeasecodImpl struct {
 	pcBlocks    *pb.Block
 
 	hotstuff consensus.HotStuff
-	sDumbo   consensus.Asynchronous
+	acs      consensus.Asynchronous
 
 	cancel context.CancelFunc
 }
@@ -58,7 +59,7 @@ func NewPeasecod(id int) *PeasecodImpl {
 
 	pea.MsgEntrance = make(chan *pb.Msg)
 	pea.FastPathRes = make(chan *consensus.FastResult)
-	pea.PessPathRes = make(chan *consensus.PessResult)
+	pea.PessPathRes = make(chan *[]consensus.PessResult)
 	pea.ID = uint32(id)
 
 	// create txn cache
@@ -83,7 +84,6 @@ func NewPeasecod(id int) *PeasecodImpl {
 
 	pea.asyncMode = false
 	pea.hotstuff = eventdriven.NewEventDrivenHotStuff(id, handleMethod, pea.TxnSet, pea.FastPathRes)
-	// pea.sDumbo = sDumbo.NewCommonSubset(id)
 
 	go pea.receiveMsg(ctx)
 	go pea.receiveRes(ctx)
@@ -158,7 +158,7 @@ func (pea *PeasecodImpl) handleFastRes(res *consensus.FastResult) {
 	logger.Info("Good work")
 }
 
-func (pea *PeasecodImpl) handlePessRes(res *consensus.PessResult) {
+func (pea *PeasecodImpl) handlePessRes(res *[]consensus.PessResult) {
 
 }
 
@@ -174,7 +174,7 @@ func (pea *PeasecodImpl) startPessPath() {
 		Proof: pea.latestBlock.Proof,
 		Flag:  flag,
 	}
-
+	pea.acs = sDumbo.NewCommonSubset(int(pea.ID), pea.epoch, pessInput, pea.TxnSet, pea.PessPathRes)
 }
 
 func handleMethod(arg string) string {

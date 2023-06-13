@@ -47,7 +47,8 @@ type CommonSubsetImpl struct {
 
 	epoch       int
 	peaWork     bool
-	resEntrance chan<- *consensus.PessResult
+	resEntrance chan<- *[]consensus.PessResult
+	peaInput    *consensus.PessResult
 }
 
 const (
@@ -74,7 +75,7 @@ type Vector struct {
 	Signature tcrsa.Signature
 }
 
-func NewCommonSubset(id int, epoch int, input *consensus.PessResult, TxnSet go_hotstuff.CmdSet, resEntrance chan<- *consensus.PessResult) *CommonSubsetImpl {
+func NewCommonSubset(id int, epoch int, input *consensus.PessResult, TxnSet go_hotstuff.CmdSet, resEntrance chan<- *[]consensus.PessResult) *CommonSubsetImpl {
 	logger.Debugf("[ACS] Start Common Subset.")
 	ctx, cancel := context.WithCancel(context.Background())
 	acs := &CommonSubsetImpl{
@@ -83,9 +84,10 @@ func NewCommonSubset(id int, epoch int, input *consensus.PessResult, TxnSet go_h
 	}
 
 	acs.MsgEntrance = make(chan *pb.Msg)
-	acs.epoch = epoch
 	acs.ID = uint32(id)
 
+	acs.epoch = epoch
+	acs.peaInput = input
 	if TxnSet != nil {
 		logger.WithField("replicaID", id).Debug("[ACS] Inherit command cache.")
 		acs.peaWork = true
@@ -220,7 +222,9 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		}
 		fmt.Println("resVectorsLen:", len(resVectors))
 		valueVectors := acs.valueVectors[acs.round]
+
 		var resTxs []string
+		var pessRes *[]consensus.PessResult
 		for _, v := range resVectors {
 			value, ok := valueVectors[v.Id]
 			if ok {
@@ -234,36 +238,53 @@ func (acs *CommonSubsetImpl) controller(task string) {
 					}).Error("[p_" + strconv.Itoa(int(acs.ID)) + "] [r_" + strconv.Itoa(acs.round) + "] [ACS] The mvba result is not Hash of value proposal!")
 					continue
 				}
-				var txs []string
-				err := json.Unmarshal(value, &txs)
-				if err != nil {
-					logger.WithField("error", err.Error()).Error("Unmarshal value failed.")
+				if !acs.peaWork {
+					var txs []string
+					err := json.Unmarshal(value, &txs)
+					if err != nil {
+						logger.WithField("error", err.Error()).Error("Unmarshal value failed.")
+					}
+					fmt.Println("len(txs):", len(txs))
+					resTxs = append(resTxs, txs...)
+				} else {
+					var txs consensus.PessResult
+					err := json.Unmarshal(value, &txs)
+					if err != nil {
+						logger.WithField("error", err.Error()).Error("Unmarshal value failed.")
+					}
+					*pessRes = append(*pessRes, txs)
 				}
-				fmt.Println("len(txs):", len(txs))
-				resTxs = append(resTxs, txs...)
 			} else {
 				fmt.Println("len(valueVectors): ", len(valueVectors))
 				fmt.Println("loss value from node: ", v.Id)
 			}
 		}
 		fmt.Println("resTxs:", resTxs)
-		err = acs.ProcessProposal(resTxs)
-		if err != nil {
-			logger.WithField("error", err.Error()).Error("echo client failed.")
+		fmt.Println("pessRes:", *pessRes)
+
+		if !acs.peaWork {
+			err = acs.ProcessProposal(resTxs)
+			if err != nil {
+				logger.WithField("error", err.Error()).Error("echo client failed.")
+			}
+			if acs.round < ROUNDSUM {
+				go acs.startNewInstance()
+			}
+		} else {
+			acs.resEntrance <- pessRes
 		}
+
 		fmt.Println(" GOOD WORK!.")
 		fmt.Println("---------------- [END_2] -----------------")
-
-		if acs.round < ROUNDSUM {
-			go acs.startNewInstance()
-		}
 	default:
 		logger.Warn("Receive unsupported task signal")
 	}
 }
 
 func (acs *CommonSubsetImpl) startNewInstance() {
-	acs.round = acs.round + 1
+	if !acs.peaWork {
+		acs.round = acs.round + 1
+	}
 	// acs.mvba.initStatus()
 	acs.taskPhase = PB_PHASE
 
@@ -303,7 +324,15 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 	}
 
 	// Start Provable Broadcast with proposal
-	proposal, _ := json.Marshal(txs)
+	var proposal []byte
+	if acs.peaWork {
+		peaInput := acs.peaInput
+		peaInput.Txn = make([]string, len(txs))
+		copy(peaInput.Txn, txs)
+		proposal, _ = json.Marshal(peaInput)
+	} else {
+		proposal, _ = json.Marshal(txs)
+	}
 	acs.proposal = proposal
 	go acs.proBroadcast.startProvableBroadcast(proposal, nil, 0, PB_PHASE, CheckValue)
 }

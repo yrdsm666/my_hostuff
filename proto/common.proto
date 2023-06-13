@@ -29,6 +29,7 @@ enum MsgType {
   HALT = 14;
   PREVOTE = 15;
   VOTE = 16;
+  TIMEOUT = 17;
 }
 
 message QuorumCert {

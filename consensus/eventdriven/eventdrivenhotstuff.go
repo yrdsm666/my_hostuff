@@ -328,10 +328,6 @@ func (ehs *EventDrivenHotStuffImpl) Update(block *pb.Block) {
 		ehs.OnCommit(block3, block2.Justify)
 		ehs.bExec = block3
 	}
-
-	if ehs.peaWork {
-
-	}
 }
 
 func (ehs *EventDrivenHotStuffImpl) OnCommit(block *pb.Block, qc *pb.QuorumCert) {
@@ -474,6 +470,12 @@ func (ehs *EventDrivenHotStuffImpl) OnReceiveVote(msg *pb.PrepareVote) {
 
 func (ehs *EventDrivenHotStuffImpl) OnPropose() {
 	logger.Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnPropose")
+
+	//
+	if int(ehs.View.ViewNum) >= 20 {
+		return
+	}
+
 	ehs.BatchTimeChan.SoftStartTimer()
 	cmds := ehs.CmdSet.GetFirst(int(ehs.Config.BatchSize))
 	if len(cmds) != 0 {
