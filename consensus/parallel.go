@@ -44,9 +44,9 @@ type Parallel interface {
 
 type ParallelImpl struct {
 	ID          uint32
-	MsgEntrance chan *pb.Msg       // receive msg
-	FastPathRes chan *FastResult   // receive reslut for fast path
-	PessPathRes chan *[]PessResult // receive reslut for pessimistic path
+	MsgEntrance chan *pb.Msg      // receive msg
+	FastPathRes chan *FastResult  // receive reslut for fast path
+	PessPathRes chan []PessResult // receive reslut for pessimistic path
 	Config      config.HotStuffConfig
 	TxnSet      go_hotstuff.CmdSet
 	TimeChan    *go_hotstuff.Timer

@@ -19,6 +19,8 @@ import (
 type Asynchronous interface {
 	//Msg(msgType pb.MsgType, id int, round int, sid int, proposal []byte, signatureByte []byte) *pb.Msg
 	GetMsgEntrance() chan<- *pb.Msg
+	GetTaskSignal() chan<- string
+	SetPeaInput(new *PessResult)
 	GetNetworkInfo() map[uint32]string
 	GetSelfInfo() *config.ReplicaInfo
 	SafeExit()
@@ -38,10 +40,12 @@ type Asynchronous interface {
 }
 
 type AsynchronousImpl struct {
-	ID            uint32
-	MsgEntrance   chan *pb.Msg // receive msg
-	Config        config.HotStuffConfig
-	TxnSet        go_hotstuff.CmdSet
+	ID          uint32
+	MsgEntrance chan *pb.Msg // receive msg
+	TaskSignal  chan string
+	Config      config.HotStuffConfig
+	TxnSet      go_hotstuff.CmdSet
+	PeaInput    *PessResult
 }
 
 // func (a *AsynchronousImpl) Msg(msgType pb.MsgType, id int, round int, sid int, proposal []byte, signatureByte []byte) *pb.Msg {
@@ -80,6 +84,14 @@ func (a *AsynchronousImpl) SafeExit() {
 
 func (a *AsynchronousImpl) GetMsgEntrance() chan<- *pb.Msg {
 	return a.MsgEntrance
+}
+
+func (a *AsynchronousImpl) GetTaskSignal() chan<- string {
+	return a.TaskSignal
+}
+
+func (a *AsynchronousImpl) SetPeaInput(new *PessResult) {
+	a.PeaInput = new
 }
 
 func (a *AsynchronousImpl) GetSelfInfo() *config.ReplicaInfo {
@@ -149,12 +161,12 @@ func (a *AsynchronousImpl) ProcessProposal(cmds []string) error {
 func (a *AsynchronousImpl) PbValueMsg(id int, round int, sid int, invokePhase string, proposal []byte, proof []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_PbValue{PbValue: &pb.PbValue{
-		Id: uint64(id),
-		Round: uint64(round),
-		Sid: uint64(sid),
+		Id:          uint64(id),
+		Round:       uint64(round),
+		Sid:         uint64(sid),
 		InvokePhase: invokePhase,
-		Proposal: proposal,
-		Proof: proof,
+		Proposal:    proposal,
+		Proof:       proof,
 	}}
 	return msg
 }
@@ -162,12 +174,12 @@ func (a *AsynchronousImpl) PbValueMsg(id int, round int, sid int, invokePhase st
 func (a *AsynchronousImpl) PbEchoMsg(id int, round int, sid int, invokePhase string, proposal []byte, partialSig []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_PbEcho{PbEcho: &pb.PbEcho{
-		Id: uint64(id),
-		Round: uint64(round),
-		Sid: uint64(sid),
+		Id:          uint64(id),
+		Round:       uint64(round),
+		Sid:         uint64(sid),
 		InvokePhase: invokePhase,
-		Proposal: proposal,
-		PartialSig: partialSig,
+		Proposal:    proposal,
+		PartialSig:  partialSig,
 	}}
 	return msg
 }
@@ -175,9 +187,9 @@ func (a *AsynchronousImpl) PbEchoMsg(id int, round int, sid int, invokePhase str
 func (a *AsynchronousImpl) PbFinalMsg(id int, round int, proposal []byte, signature []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_PbFinal{PbFinal: &pb.PbFinal{
-		Id: uint64(id),
-		Round: uint64(round),
-		Proposal: proposal,
+		Id:        uint64(id),
+		Round:     uint64(round),
+		Proposal:  proposal,
 		Signature: signature,
 	}}
 	return msg
@@ -186,9 +198,9 @@ func (a *AsynchronousImpl) PbFinalMsg(id int, round int, proposal []byte, signat
 func (a *AsynchronousImpl) CoinShareMsg(id int, round int, sid int, partialSig []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_CoinShare{CoinShare: &pb.CoinShare{
-		Id: uint64(id),
-		Round: uint64(round),
-		Sid: uint64(sid),
+		Id:         uint64(id),
+		Round:      uint64(round),
+		Sid:        uint64(sid),
 		PartialSig: partialSig,
 	}}
 	return msg
@@ -197,10 +209,10 @@ func (a *AsynchronousImpl) CoinShareMsg(id int, round int, sid int, partialSig [
 func (a *AsynchronousImpl) SpbFinalMsg(id int, round int, sid int, proposal []byte, signature []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_SpbFinal{SpbFinal: &pb.SpbFinal{
-		Id: uint64(id),
-		Round: uint64(round),
-		Sid: uint64(sid),
-		Proposal: proposal,
+		Id:        uint64(id),
+		Round:     uint64(round),
+		Sid:       uint64(sid),
+		Proposal:  proposal,
 		Signature: signature,
 	}}
 	return msg
@@ -209,9 +221,9 @@ func (a *AsynchronousImpl) SpbFinalMsg(id int, round int, sid int, proposal []by
 func (a *AsynchronousImpl) DoneMsg(id int, round int, sid int) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_Done{Done: &pb.Done{
-		Id: uint64(id),
+		Id:    uint64(id),
 		Round: uint64(round),
-		Sid: uint64(sid),
+		Sid:   uint64(sid),
 	}}
 	return msg
 }
@@ -219,9 +231,9 @@ func (a *AsynchronousImpl) DoneMsg(id int, round int, sid int) *pb.Msg {
 func (a *AsynchronousImpl) HaltMsg(id int, round int, sid int, final []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_Halt{Halt: &pb.Halt{
-		Id: uint64(id),
+		Id:    uint64(id),
 		Round: uint64(round),
-		Sid: uint64(sid),
+		Sid:   uint64(sid),
 		Final: final,
 	}}
 	return msg
@@ -230,13 +242,13 @@ func (a *AsynchronousImpl) HaltMsg(id int, round int, sid int, final []byte) *pb
 func (a *AsynchronousImpl) PreVoteMsg(id int, round int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_PreVote{PreVote: &pb.PreVote{
-		Id: uint64(id),
-		Round: uint64(round),
-		Sid: uint64(sid),
-		Leader: uint64(leader),
-		Flag: uint64(flag),
-		Proposal: proposal,
-		Signature: signature,
+		Id:         uint64(id),
+		Round:      uint64(round),
+		Sid:        uint64(sid),
+		Leader:     uint64(leader),
+		Flag:       uint64(flag),
+		Proposal:   proposal,
+		Signature:  signature,
 		PartialSig: partialSig,
 	}}
 	return msg
@@ -245,13 +257,13 @@ func (a *AsynchronousImpl) PreVoteMsg(id int, round int, sid int, leader int, fl
 func (a *AsynchronousImpl) VoteMsg(id int, round int, sid int, leader int, flag int, proposal []byte, signature []byte, partialSig []byte) *pb.Msg {
 	msg := &pb.Msg{}
 	msg.Payload = &pb.Msg_Vote{Vote: &pb.Vote{
-		Id: uint64(id),
-		Round: uint64(round),
-		Sid: uint64(sid),
-		Leader: uint64(leader),
-		Flag: uint64(flag),
-		Proposal: proposal,
-		Signature: signature,
+		Id:         uint64(id),
+		Round:      uint64(round),
+		Sid:        uint64(sid),
+		Leader:     uint64(leader),
+		Flag:       uint64(flag),
+		Proposal:   proposal,
+		Signature:  signature,
 		PartialSig: partialSig,
 	}}
 	return msg

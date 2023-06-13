@@ -3,6 +3,7 @@ package peasecod
 import (
 	"bytes"
 	"context"
+	"sync"
 
 	//"errors"
 	//"github.com/golang/protobuf/proto"
@@ -21,8 +22,9 @@ import (
 	//"os"
 	"strconv"
 	"strings"
+
 	//"sync"
-	// "fmt"
+	"fmt"
 	// "time"
 )
 
@@ -43,10 +45,14 @@ type PeasecodImpl struct {
 	maxProof    *pb.QuorumCert
 	pcBlocks    *pb.Block
 
-	hotstuff consensus.HotStuff
-	acs      consensus.Asynchronous
+	pacemaker Pacemaker
+	hotstuff  consensus.HotStuff
+	acs       consensus.Asynchronous
+	// acs sDumbo.CommonSubsetImpl
 
-	cancel context.CancelFunc
+	cancel  context.CancelFunc
+	lock    sync.Mutex
+	waitAsc *sync.Cond
 }
 
 func NewPeasecod(id int) *PeasecodImpl {
@@ -59,7 +65,7 @@ func NewPeasecod(id int) *PeasecodImpl {
 
 	pea.MsgEntrance = make(chan *pb.Msg)
 	pea.FastPathRes = make(chan *consensus.FastResult)
-	pea.PessPathRes = make(chan *[]consensus.PessResult)
+	pea.PessPathRes = make(chan []consensus.PessResult)
 	pea.ID = uint32(id)
 
 	// create txn cache
@@ -84,9 +90,14 @@ func NewPeasecod(id int) *PeasecodImpl {
 
 	pea.asyncMode = false
 	pea.hotstuff = eventdriven.NewEventDrivenHotStuff(id, handleMethod, pea.TxnSet, pea.FastPathRes)
+	pea.acs = sDumbo.NewCommonSubset(int(pea.ID), pea.TxnSet, pea.PessPathRes)
+
+	pea.pacemaker = NewPacemaker(pea)
+	pea.waitAsc = sync.NewCond(&pea.lock)
 
 	go pea.receiveMsg(ctx)
 	go pea.receiveRes(ctx)
+	go pea.pacemaker.Run(ctx)
 
 	return pea
 }
@@ -110,6 +121,7 @@ func (pea *PeasecodImpl) receiveRes(ctx context.Context) {
 		case res := <-pea.FastPathRes:
 			go pea.handleFastRes(res)
 		case res := <-pea.PessPathRes:
+			logger.Info("Good gooooooood work")
 			go pea.handlePessRes(res)
 		}
 	}
@@ -130,24 +142,35 @@ func (pea *PeasecodImpl) handleMsg(msg *pb.Msg) {
 	case *pb.Msg_NewView:
 		pea.hotstuff.GetMsgEntrance() <- msg
 	// case *pb.Msg_PbValue:
+	// 	pea.acs.GetMsgEntrance() <- msg
 	// case *pb.Msg_PbEcho:
-
+	// 	pea.acs.GetMsgEntrance() <- msg
 	// case *pb.Msg_PbFinal:
-
+	// 	pea.acs.GetMsgEntrance() <- msg
 	// case *pb.Msg_CoinShare:
-
+	// 	pea.acs.GetMsgEntrance() <- msg
 	// case *pb.Msg_SpbFinal:
-
+	// 	pea.acs.GetMsgEntrance() <- msg
 	// case *pb.Msg_Done:
-
+	// 	pea.acs.GetMsgEntrance() <- msg
 	// case *pb.Msg_Halt:
-
+	// 	pea.acs.GetMsgEntrance() <- msg
 	// case *pb.Msg_PreVote:
-
+	// 	pea.acs.GetMsgEntrance() <- msg
 	// case *pb.Msg_Vote:
-
+	// 	pea.acs.GetMsgEntrance() <- msg
+	case *pb.Msg_Timeout:
+		pea.pacemaker.handleTimeout(msg)
 	default:
-		logger.Warn("Receive unsupported msg")
+		// logger.Warn("Receive unsupported msg")
+		// pea.lock.Lock()
+		// if pea.acs.start == false {
+		// 	logger.Warn("[p_" + strconv.Itoa(int(cc.acs.ID)) + "] [r_" + strconv.Itoa(cc.acs.round) + "] [s_" + strconv.Itoa(cc.sid) + "] [CC] wait common coin start")
+		// 	pea.waitAsc.Wait()
+		// }
+		// pea.lock.Unlock()
+
+		pea.acs.GetMsgEntrance() <- msg
 	}
 }
 
@@ -158,11 +181,20 @@ func (pea *PeasecodImpl) handleFastRes(res *consensus.FastResult) {
 	logger.Info("Good work")
 }
 
-func (pea *PeasecodImpl) handlePessRes(res *[]consensus.PessResult) {
-
+func (pea *PeasecodImpl) handlePessRes(res []consensus.PessResult) {
+	fmt.Println("len(res):", len(res))
+	var flag string = "continue"
+	for _, v := range res {
+		if v.Flag == "stop" {
+			flag = v.Flag
+		}
+	}
+	fmt.Println("flag:", flag)
+	logger.Info("Good work")
 }
 
 func (pea *PeasecodImpl) startPessPath() {
+	logger.Info("start ACS in PEA")
 	var flag string
 	if pea.maxProof == nil || (pea.maxProof != nil && bytes.Equal(pea.maxProof.BlockHash, pea.latestBlock.Proof.BlockHash)) {
 		flag = "continue"
@@ -174,7 +206,8 @@ func (pea *PeasecodImpl) startPessPath() {
 		Proof: pea.latestBlock.Proof,
 		Flag:  flag,
 	}
-	pea.acs = sDumbo.NewCommonSubset(int(pea.ID), pea.epoch, pessInput, pea.TxnSet, pea.PessPathRes)
+	pea.acs.SetPeaInput(pessInput)
+	pea.acs.GetTaskSignal() <- "start"
 }
 
 func handleMethod(arg string) string {

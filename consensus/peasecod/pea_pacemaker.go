@@ -14,9 +14,8 @@ import (
 )
 
 type Pacemaker interface {
-	OnBeat()
-	OnNextEpoch()
-	OnReceiveTimeout(qc *pb.QuorumCert)
+	broadcatTimeout()
+	handleTimeout(msg *pb.Msg)
 	Run(ctx context.Context)
 }
 

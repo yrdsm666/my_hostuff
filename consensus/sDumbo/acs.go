@@ -27,6 +27,10 @@ import (
 
 var logger = logging.GetLogger()
 
+type CommonSubset interface {
+	startNewInstance()
+}
+
 type CommonSubsetImpl struct {
 	consensus.AsynchronousImpl
 
@@ -47,8 +51,7 @@ type CommonSubsetImpl struct {
 
 	epoch       int
 	peaWork     bool
-	resEntrance chan<- *[]consensus.PessResult
-	peaInput    *consensus.PessResult
+	resEntrance chan<- []consensus.PessResult
 }
 
 const (
@@ -75,7 +78,7 @@ type Vector struct {
 	Signature tcrsa.Signature
 }
 
-func NewCommonSubset(id int, epoch int, input *consensus.PessResult, TxnSet go_hotstuff.CmdSet, resEntrance chan<- *[]consensus.PessResult) *CommonSubsetImpl {
+func NewCommonSubset(id int, TxnSet go_hotstuff.CmdSet, resEntrance chan<- []consensus.PessResult) *CommonSubsetImpl {
 	logger.Debugf("[ACS] Start Common Subset.")
 	ctx, cancel := context.WithCancel(context.Background())
 	acs := &CommonSubsetImpl{
@@ -84,10 +87,9 @@ func NewCommonSubset(id int, epoch int, input *consensus.PessResult, TxnSet go_h
 	}
 
 	acs.MsgEntrance = make(chan *pb.Msg)
+	acs.TaskSignal = make(chan string)
 	acs.ID = uint32(id)
 
-	acs.epoch = epoch
-	acs.peaInput = input
 	if TxnSet != nil {
 		logger.WithField("replicaID", id).Debug("[ACS] Inherit command cache.")
 		acs.peaWork = true
@@ -112,8 +114,8 @@ func NewCommonSubset(id int, epoch int, input *consensus.PessResult, TxnSet go_h
 	acs.Config.PrivateKey = privateKey
 
 	// // create ACS components
-	// acs.proBroadcast = NewProvableBroadcast(acs)
-	// acs.mvba = NewSpeedMvba(acs)
+	acs.proBroadcast = NewProvableBroadcast(acs)
+	acs.mvba = NewSpeedMvba(acs)
 
 	// create sDumbo input value cache and msg cache
 	// valueVectors: round -> id -> []byte
@@ -125,7 +127,9 @@ func NewCommonSubset(id int, epoch int, input *consensus.PessResult, TxnSet go_h
 	go acs.receiveMsg(ctx)
 
 	// start ACS
-	go acs.controller("start")
+	if !acs.peaWork {
+		go acs.controller("start")
+	}
 
 	return acs
 }
@@ -137,6 +141,8 @@ func (acs *CommonSubsetImpl) receiveMsg(ctx context.Context) {
 			return
 		case msg := <-acs.MsgEntrance:
 			go acs.handleMsg(msg)
+		case task := <-acs.TaskSignal:
+			go acs.controller(task)
 		}
 	}
 }
@@ -224,7 +230,7 @@ func (acs *CommonSubsetImpl) controller(task string) {
 		valueVectors := acs.valueVectors[acs.round]
 
 		var resTxs []string
-		var pessRes *[]consensus.PessResult
+		var pessRes []consensus.PessResult
 		for _, v := range resVectors {
 			value, ok := valueVectors[v.Id]
 			if ok {
@@ -252,17 +258,16 @@ func (acs *CommonSubsetImpl) controller(task string) {
 					if err != nil {
 						logger.WithField("error", err.Error()).Error("Unmarshal value failed.")
 					}
-					*pessRes = append(*pessRes, txs)
+					pessRes = append(pessRes, txs)
 				}
 			} else {
 				fmt.Println("len(valueVectors): ", len(valueVectors))
 				fmt.Println("loss value from node: ", v.Id)
 			}
 		}
-		fmt.Println("resTxs:", resTxs)
-		fmt.Println("pessRes:", *pessRes)
 
 		if !acs.peaWork {
+			fmt.Println("resTxs:", resTxs)
 			err = acs.ProcessProposal(resTxs)
 			if err != nil {
 				logger.WithField("error", err.Error()).Error("echo client failed.")
@@ -271,6 +276,7 @@ func (acs *CommonSubsetImpl) controller(task string) {
 				go acs.startNewInstance()
 			}
 		} else {
+			fmt.Println("pessRes:", pessRes)
 			acs.resEntrance <- pessRes
 		}
 
@@ -288,7 +294,7 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 	// acs.mvba.initStatus()
 	acs.taskPhase = PB_PHASE
 
-	// create ACS components
+	// clean ACS components
 	acs.proBroadcast = NewProvableBroadcast(acs)
 	acs.mvba = NewSpeedMvba(acs)
 
@@ -326,7 +332,7 @@ func (acs *CommonSubsetImpl) startNewInstance() {
 	// Start Provable Broadcast with proposal
 	var proposal []byte
 	if acs.peaWork {
-		peaInput := acs.peaInput
+		peaInput := acs.PeaInput
 		peaInput.Txn = make([]string, len(txs))
 		copy(peaInput.Txn, txs)
 		proposal, _ = json.Marshal(peaInput)
