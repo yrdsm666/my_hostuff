@@ -38,7 +38,7 @@ type PeasecodImpl struct {
 	// proposal []byte
 
 	hotstuff    consensus.HotStuff
-	latestBlock consensus.PathResult
+	latestBlock *consensus.PathResult
 	ResEntrance chan *consensus.PathResult
 
 	cancel context.CancelFunc
@@ -74,6 +74,7 @@ func NewPeasecod(id int) *PeasecodImpl {
 	pea.hotstuff = eventdriven.NewEventDrivenHotStuff(id, handleMethod, pea.TxnSet, pea.ResEntrance)
 
 	go pea.receiveMsg(ctx)
+	go pea.receiveRes(ctx)
 
 	return pea
 }
@@ -85,6 +86,17 @@ func (pea *PeasecodImpl) receiveMsg(ctx context.Context) {
 			return
 		case msg := <-pea.MsgEntrance:
 			go pea.handleMsg(msg)
+		}
+	}
+}
+
+func (pea *PeasecodImpl) receiveRes(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case res := <-pea.ResEntrance:
+			go pea.handleRes(res)
 		}
 	}
 }
@@ -122,6 +134,14 @@ func (pea *PeasecodImpl) handleMsg(msg *pb.Msg) {
 
 	default:
 		logger.Warn("Receive unsupported msg")
+	}
+}
+
+func (pea *PeasecodImpl) handleRes(res *consensus.PathResult) {
+	if res.Flag == "hotstuff" {
+		pea.latestBlock = res
+		pea.ProcessProposal(res.Block.Commands)
+		logger.Info("Good work")
 	}
 }
 

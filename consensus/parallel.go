@@ -3,6 +3,8 @@ package consensus
 import (
 	// "bytes"
 	"context"
+	"strings"
+
 	// "encoding/json"
 	// "fmt"
 	//"github.com/niclabs/tcrsa"
@@ -10,8 +12,9 @@ import (
 	"github.com/wjbbig/go-hotstuff/config"
 	pb "github.com/wjbbig/go-hotstuff/proto"
 	"google.golang.org/grpc"
+
 	// "os"
-	// "strconv"
+	"strconv"
 	// "fmt"
 )
 
@@ -132,7 +135,8 @@ func (a *ParallelImpl) ProcessProposal(cmds []string) error {
 	for _, cmd := range cmds {
 		// result := a.ProcessMethod(cmd)
 		// msg := &pb.Msg{Payload: &pb.Msg_Reply{Reply: &pb.Reply{Result: result, Command: cmd}}}
-		msg := &pb.Msg{Payload: &pb.Msg_Reply{Reply: &pb.Reply{Result: "100", Command: cmd}}}
+		result := handleMethod(cmd)
+		msg := &pb.Msg{Payload: &pb.Msg_Reply{Reply: &pb.Reply{Result: result, Command: cmd}}}
 		err := a.Unicast("localhost:9999", msg)
 		if err != nil {
 			return err
@@ -140,4 +144,11 @@ func (a *ParallelImpl) ProcessProposal(cmds []string) error {
 	}
 	a.TxnSet.Remove(cmds...)
 	return nil
+}
+
+func handleMethod(arg string) string {
+	split := strings.Split(arg, ",")
+	arg1, _ := strconv.Atoi(split[0])
+	arg2, _ := strconv.Atoi(split[1])
+	return strconv.Itoa(arg1 + arg2)
 }

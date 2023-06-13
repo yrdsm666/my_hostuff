@@ -36,7 +36,7 @@ const (
 
 type EventDrivenHotStuff interface {
 	Update(block *pb.Block)
-	OnCommit(block *pb.Block)
+	OnCommit(block *pb.Block, qc *pb.QuorumCert)
 	OnReceiveProposal(msg *pb.Prepare) (*tcrsa.SigShare, error)
 	OnReceiveVote(msg *pb.PrepareVote)
 	OnPropose()
@@ -325,19 +325,19 @@ func (ehs *EventDrivenHotStuffImpl) Update(block *pb.Block) {
 
 	if bytes.Equal(block1.ParentHash, block2.Hash) && bytes.Equal(block2.ParentHash, block3.Hash) {
 		logger.WithField("blockHash", hex.EncodeToString(block3.Hash)).Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] DECIDE.")
-		ehs.OnCommit(block3)
+		ehs.OnCommit(block3, block2.Justify)
 		ehs.bExec = block3
 	}
 
 	if ehs.peaWork {
-		ehs.commitForPea(block3, block2.Justify)
+
 	}
 }
 
-func (ehs *EventDrivenHotStuffImpl) OnCommit(block *pb.Block) {
+func (ehs *EventDrivenHotStuffImpl) OnCommit(block *pb.Block, qc *pb.QuorumCert) {
 	if ehs.bExec.Height < block.Height {
 		if parent, _ := ehs.BlockStorage.ParentOf(block); parent != nil {
-			ehs.OnCommit(parent)
+			ehs.OnCommit(parent, block.Justify)
 		}
 		go func() {
 			err := ehs.BlockStorage.UpdateState(block)
@@ -346,7 +346,12 @@ func (ehs *EventDrivenHotStuffImpl) OnCommit(block *pb.Block) {
 			}
 		}()
 		logger.WithField("blockHash", hex.EncodeToString(block.Hash)).Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] EXEC.")
-		ehs.ProcessProposal(block.Commands)
+
+		if ehs.peaWork {
+			ehs.commitForPea(block, qc)
+		} else {
+			ehs.ProcessProposal(block.Commands)
+		}
 	}
 }
 
@@ -542,7 +547,7 @@ func (ehs *EventDrivenHotStuffImpl) commitForPea(block *pb.Block, qc *pb.QuorumC
 	res := &consensus.PathResult{
 		Block: block,
 		Proof: qc,
-		Flag:  "",
+		Flag:  "hotstuff",
 	}
 	ehs.resEntrance <- res
 }
