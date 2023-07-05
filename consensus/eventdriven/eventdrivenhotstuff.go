@@ -415,28 +415,30 @@ func (ehs *EventDrivenHotStuffImpl) OnReceiveProposal(msg *pb.Prepare) (*tcrsa.S
 }
 
 func (ehs *EventDrivenHotStuffImpl) OnReceiveVote(msg *pb.PrepareVote) {
-	// verify partSig
-	// err := go_hotstuff.VerifyPartSig(partSig, ehs.CurExec.DocumentHash, ehs.Config.PublicKey)
-	// if err != nil {
-	// 	logger.WithFields(logrus.Fields{
-	// 		"error":        err.Error(),
-	// 		"documentHash": hex.EncodeToString(ehs.CurExec.DocumentHash),
-	// 		"Height":       ehs.View.ViewNum,
-	// 	}).Warn("[replica_"+strconv.Itoa(int(ehs.ID))+"] [view_"+strconv.Itoa(int(ehs.View.ViewNum))+"] OnReceiveVote: signature not verified!")
-	// 	return
-	// }
-
 	logger.Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnReceiveVote")
 	// Ignore messages from old views
 	if msg.ViewNum < ehs.View.ViewNum {
 		return
 	}
+
 	partSig := &tcrsa.SigShare{}
 	err := json.Unmarshal(msg.PartialSig, partSig)
 	if err != nil {
 		logger.WithField("error", err.Error()).Error("Unmarshal partSig failed.")
 	}
 	documentHash := ehs.getMsgDataHash(msg.ViewNum, msg.BlockHash)
+
+	// verify partSig
+	// err = go_hotstuff.VerifyPartSig(partSig, ehs.CurExec.DocumentHash, ehs.Config.PublicKey)
+	err = go_hotstuff.VerifyPartSig(partSig, documentHash, ehs.Config.PublicKey)
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"error":        err.Error(),
+			"documentHash": hex.EncodeToString(ehs.CurExec.DocumentHash),
+			"Height":       ehs.View.ViewNum,
+		}).Warn("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnReceiveVote: signature not verified!")
+		return
+	}
 
 	ehs.CurExec.PrepareVote = append(ehs.CurExec.PrepareVote, partSig)
 	if len(ehs.CurExec.PrepareVote) == 2*ehs.Config.F+1 {
@@ -472,9 +474,9 @@ func (ehs *EventDrivenHotStuffImpl) OnPropose() {
 	logger.Info("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnPropose")
 
 	//
-	if int(ehs.View.ViewNum) >= 20 {
-		return
-	}
+	// if int(ehs.View.ViewNum) >= 20 {
+	// 	return
+	// }
 
 	ehs.BatchTimeChan.SoftStartTimer()
 	cmds := ehs.CmdSet.GetFirst(int(ehs.Config.BatchSize))
