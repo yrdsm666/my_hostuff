@@ -96,13 +96,10 @@ func (p *pacemakerImpl) Run(ctx context.Context) {
 		switch n {
 		case ReceiveProposal:
 			p.ehs.TimeChan.HardStartTimer()
-			break
 		case QCFinish:
 			p.OnBeat()
-			break
 		case ReceiveNewView:
 			p.OnBeat()
-			break
 		}
 
 		var ok bool
@@ -111,7 +108,6 @@ func (p *pacemakerImpl) Run(ctx context.Context) {
 			if !ok {
 				return
 			}
-			break
 		case <-ctx.Done():
 			return
 		}

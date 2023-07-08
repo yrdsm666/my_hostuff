@@ -206,7 +206,6 @@ func (ehs *EventDrivenHotStuffImpl) handleMsg(msg *pb.Msg) {
 			// _ = ehs.Unicast(ehs.GetNetworkInfo()[ehs.GetLeader()], msg)
 			return
 		}
-		break
 	case *pb.Msg_Prepare:
 		prepareMsg := msg.GetPrepare()
 		// Ignore messages from old views
@@ -237,11 +236,9 @@ func (ehs *EventDrivenHotStuffImpl) handleMsg(msg *pb.Msg) {
 			// if replica is not a leader, clear the cache
 			ehs.CurExec = consensus.NewCurProposal()
 		}
-		break
 	case *pb.Msg_PrepareVote:
 		prepareVoteMsg := msg.GetPrepareVote()
 		ehs.OnReceiveVote(prepareVoteMsg)
-		break
 	case *pb.Msg_NewView:
 		newViewMsg := msg.GetNewView()
 		// wait for 2f+1 votes
@@ -266,7 +263,6 @@ func (ehs *EventDrivenHotStuffImpl) handleMsg(msg *pb.Msg) {
 			}
 			ehs.pacemaker.OnReceiverNewView(ehs.qcHigh)
 		}
-		break
 	default:
 		logger.Warn("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] Receive unsupported msg")
 	}
@@ -477,13 +473,18 @@ func (ehs *EventDrivenHotStuffImpl) OnPropose() {
 	// if int(ehs.View.ViewNum) >= 20 {
 	// 	return
 	// }
+	if ehs.ID != ehs.GetLeader() {
+		logger.Warn("[replica_" + strconv.Itoa(int(ehs.ID)) + "] [view_" + strconv.Itoa(int(ehs.View.ViewNum)) + "] OnPropose warn")
+		return
+	}
 
 	ehs.BatchTimeChan.SoftStartTimer()
 	cmds := ehs.CmdSet.GetFirst(int(ehs.Config.BatchSize))
 	if len(cmds) != 0 {
 		ehs.BatchTimeChan.Stop()
 	} else {
-		return
+		// return
+		ehs.BatchTimeChan.Stop()
 	}
 	// create node
 	proposal := ehs.createProposal(cmds)
